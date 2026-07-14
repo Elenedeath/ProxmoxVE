@@ -126,7 +126,7 @@ EOF
     msg_ok "Stopped Services"
     VCHORD_RELEASE="1.1.1"
     PG_VERSION=$(ls /etc/postgresql/ 2>/dev/null | sort -V | tail -1)
-    PG_VERSION=${PG_VERSION:-16}
+    PG_VERSION=${PG_VERSION:-18}
     [[ -f ~/.vchord_version ]] && mv ~/.vchord_version ~/.vectorchord
     if check_for_gh_release "VectorChord" "tensorchord/VectorChord" "${VCHORD_RELEASE}" "updated together with Immich after testing"; then
       # dead tuples in smart_search/face_search make the REINDEX below fail with
