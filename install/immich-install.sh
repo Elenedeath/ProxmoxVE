@@ -157,10 +157,10 @@ $STD apt install -t testing --no-install-recommends -yqq libmimalloc3 libde265-d
 msg_ok "Installed packages from Debian Testing repo"
 
 setup_uv
-PG_VERSION="16" PG_MODULES="pgvector" setup_postgresql
+PG_VERSION="${var_pg}" PG_MODULES="pgvector" setup_postgresql
 
 ACTUAL_PG_VERSION=$(ls /etc/postgresql/ 2>/dev/null | sort -V | tail -1)
-ACTUAL_PG_VERSION=${ACTUAL_PG_VERSION:-16}
+ACTUAL_PG_VERSION=${ACTUAL_PG_VERSION:-${var_pg}}
 
 VCHORD_RELEASE="1.1.1"
 fetch_and_deploy_gh_release "VectorChord" "tensorchord/VectorChord" "binary" "${VCHORD_RELEASE}" "/tmp" "postgresql-${ACTUAL_PG_VERSION}-vchord_*_$(arch_resolve).deb"
