@@ -448,7 +448,7 @@ function automate_installer() {
   msg_info "Confirming destructive install"
   send_key_to_vm left
   send_key_to_vm ret
-  wait_for_boot 40
+  wait_for_boot 90
 
   msg_info "Switching boot order to disk"
   qm set $VMID -boot order='scsi0;ide2' >/dev/null
@@ -525,7 +525,36 @@ if [ -n "$WAN_BRG" ]; then
   msg_ok "WAN interface added"
 fi
 
-DESCRIPTION="<div align='center'><h2>OPNsense 26.7 VM (Official ISO)</h2><p>VM créée pour installation automatisée via l'ISO officielle OPNsense avec cache ISO local, sans assignation post-install forcée ni étapes swap/password automatiques.</p></div>"
+DESCRIPTION=$(
+cat <<EOF
+<div align='center'>
+<a href='https://community-scripts.org' target='_blank' rel='noopener noreferrer'>
+<img src='https://raw.githubusercontent.com/michelroegl-brunner/ProxmoxVE/refs/heads/develop/misc/images/logo-81x112.png' alt='Logo' style='width:81px;height:112px;'/>
+</a>
+
+<h2 style='font-size: 24px; margin: 20px 0;'>OPNsense ${var_version} VM (Official ISO)</h2>
+
+<p style='margin: 16px 0;'>
+<a href='https://ko-fi.com/community_scripts' target='_blank' rel='noopener noreferrer'>
+<img src='https://img.shields.io/badge/&#x2615;-Buy us a coffee-blue' alt='spend Coffee' />
+</a>
+</p>
+
+<span style='margin: 0 10px;'>
+<i class="fa fa-github fa-fw" style="color: #f5f5f5;"></i>
+<a href='https://github.com/community-scripts/ProxmoxVE' target='_blank' rel='noopener noreferrer' style='text-decoration: none; color: #00617f;'>GitHub</a>
+</span>
+<span style='margin: 0 10px;'>
+<i class="fa fa-comments fa-fw" style="color: #f5f5f5;"></i>
+<a href='https://github.com/community-scripts/ProxmoxVE/discussions' target='_blank' rel='noopener noreferrer' style='text-decoration: none; color: #00617f;'>Discussions</a>
+</span>
+<span style='margin: 0 10px;'>
+<i class="fa fa-exclamation-circle fa-fw" style="color: #f5f5f5;"></i>
+<a href='https://github.com/community-scripts/ProxmoxVE/issues' target='_blank' rel='noopener noreferrer' style='text-decoration: none; color: #00617f;'>Issues</a>
+</span>
+</div>
+EOF
+)
 qm set $VMID -description "$DESCRIPTION" >/dev/null
 
 msg_info "Starting VM"
@@ -538,7 +567,6 @@ msg_ok "Completed successfully!"
 echo -e "${YW}Expected result:${CL}"
 echo -e " - OPNsense installed on disk"
 echo -e " - Local ISO reused on next runs unless you force re-download"
-echo -e " - No forced interface reassignment after install"
-echo -e " - No automated swap/password steps during install"
-echo -e " - LAN configured only after login through console menu option 2"
+echo -e " - Interfaces assigned automatically based on detected/default install flow"
+echo -e " - LAN configured automatically via console flow"
 echo -e "${RD}Warning:${CL} Console automation still depends on exact screen order and timings."
