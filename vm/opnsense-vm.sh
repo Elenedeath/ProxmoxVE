@@ -305,11 +305,12 @@ function start_script() {
 }
 
 function find_opnsense_iso_url() {
-  local mirror url
-  for mirror in \
-    "https://mirrors.vraphim.com/opnsense/releases/" \
-    "https://pkg.opnsense.org/releases/"; do
-    url="${mirror}${ISO_FILENAME}"
+  local base url
+  for base in \
+    "https://pkg.opnsense.org/releases/mirror/" \
+    "https://mirrors.dotsrc.org/opnsense/releases/mirror/" \
+    "https://mirror.ntct.edu.tw/opnsense/releases/mirror/"; do
+    url="${base}${ISO_FILENAME}"
     if curl -fsI "$url" >/dev/null 2>&1; then
       echo "$url"
       return 0
