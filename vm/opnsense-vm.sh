@@ -543,7 +543,7 @@ cat <<EOF
 <img src='https://raw.githubusercontent.com/michelroegl-brunner/ProxmoxVE/refs/heads/develop/misc/images/logo-81x112.png' alt='Logo' style='width:81px;height:112px;'/>
 </a>
 
-<h2 style='font-size: 24px; margin: 20px 0;'>OPNsense VM</h2>
+<h2 style='font-size: 24px; margin: 20px 0;'>OPNsense ${var_version} VM (Official ISO)</h2>
 
 <p style='margin: 16px 0;'>
 <a href='https://ko-fi.com/community_scripts' target='_blank' rel='noopener noreferrer'>
