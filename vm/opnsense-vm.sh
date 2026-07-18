@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-source /dev/stdin <<<$(curl -fsSL https://raw.githubusercontent.com/elenedeath/ProxmoxVE/main/misc/api.func)
+source /dev/stdin <<<$(curl -fsSL https://raw.githubusercontent.com/community-scripts/ProxmoxVE/main/misc/api.func)
 
 function header_info {
   clear
@@ -375,4 +375,113 @@ function automate_installer() {
   wait_for_boot 70
 
   msg_info "Skipping manual VLAN assignment and accepting defaults"
-  s
+  send_key_to_vm ret
+  wait_for_boot 10
+
+  msg_info "Logging into installed system"
+  send_line_to_vm "root"
+  send_line_to_vm "${INSTALL_ROOT_PASSWORD}"
+  wait_for_boot 3
+
+  msg_info "Opening console menu option 2 for IP configuration"
+  send_line_to_vm "2"
+  wait_for_boot 2
+
+  msg_info "Configuring LAN interface"
+  send_line_to_vm "1"
+  send_line_to_vm "y"
+  send_line_to_vm "n"
+  send_line_to_vm "n"
+  send_line_to_vm " "
+  send_line_to_vm "n"
+  send_line_to_vm "n"
+  send_line_to_vm "n"
+  wait_for_boot 15
+
+  msg_ok "Automatic install flow sent to guest"
+}
+
+arch_check
+pve_check
+ssh_check
+start_script
+post_to_api_vm
+
+msg_info "Validating Storage"
+STORAGE=$(pvesm status -content images | awk 'NR==2 {print $1}')
+if [ -z "$STORAGE" ]; then
+  msg_error "Unable to detect a valid storage location."
+  exit 1
+fi
+msg_ok "Using ${CL}${BL}$STORAGE${CL} ${GN}for VM disks."
+
+msg_info "Validating ISO storage"
+ISO_STORAGE=$(pvesm status -content iso | awk 'NR==2 {print $1}')
+if [ -z "${ISO_STORAGE:-}" ]; then
+  msg_error "No storage with ISO content enabled was found."
+  exit 116
+fi
+msg_ok "Using ${CL}${BL}${ISO_STORAGE}${CL} ${GN}for ISO storage."
+
+msg_info "Locating official OPNsense ISO"
+ISO_URL=$(find_opnsense_iso_url) || {
+  msg_error "Unable to locate ${ISO_FILENAME} on known OPNsense mirrors."
+  exit 117
+}
+msg_ok "Download URL: ${CL}${BL}${ISO_URL}${CL}"
+
+msg_info "Downloading official OPNsense ISO archive"
+curl -f#SL -o "${ISO_FILENAME}" "$ISO_URL"
+echo -en "\e[1A\e[0K"
+msg_ok "Downloaded ${CL}${BL}${ISO_FILENAME}${CL}"
+
+msg_info "Decompressing ISO archive"
+bzip2 -d "${ISO_FILENAME}"
+msg_ok "Decompressed ${CL}${BL}${ISO_RAW_FILENAME}${CL}"
+
+msg_info "Copying ISO into Proxmox ISO storage"
+mkdir -p "/var/lib/vz/template/iso"
+cp "$ISO_RAW_FILENAME" "/var/lib/vz/template/iso/${ISO_RAW_FILENAME}"
+msg_ok "ISO copied to ${CL}${BL}/var/lib/vz/template/iso/${ISO_RAW_FILENAME}${CL}"
+
+msg_info "Creating OPNsense VM"
+qm create $VMID -agent 1${MACHINE} -tablet 0 -localtime 1 -bios ovmf${CPU_TYPE} -cores $CORE_COUNT -memory $RAM_SIZE -name $HN -tags community-script -onboot 1 -ostype l26 -scsihw virtio-scsi-pci >/dev/null
+msg_ok "VM created"
+
+msg_info "Allocating system disk"
+qm set $VMID -scsi0 ${STORAGE}:${DISK_SIZE},discard=on,ssd=1 >/dev/null
+msg_ok "Disk attached"
+
+msg_info "Configuring boot media"
+qm set $VMID -efidisk0 ${STORAGE}:1${FORMAT} >/dev/null
+qm set $VMID -ide2 ${ISO_STORAGE}:iso/${ISO_RAW_FILENAME},media=cdrom >/dev/null
+qm set $VMID -boot order='ide2;scsi0' >/dev/null
+qm set $VMID -serial0 socket >/dev/null
+msg_ok "Boot media configured"
+
+msg_info "Adding LAN interface"
+qm set $VMID -net0 virtio,bridge=${BRG},macaddr=${MAC}${VLAN}${MTU} >/dev/null
+msg_ok "LAN interface added"
+
+if [ -n "$WAN_BRG" ]; then
+  msg_info "Adding WAN interface"
+  qm set $VMID -net1 virtio,bridge=${WAN_BRG},macaddr=${WAN_MAC} >/dev/null
+  msg_ok "WAN interface added"
+fi
+
+DESCRIPTION="<div align='center'><h2>OPNsense 26.7 VM (Official ISO)</h2><p>VM créée pour installation automatisée via l'ISO officielle OPNsense.</p></div>"
+qm set $VMID -description "$DESCRIPTION" >/dev/null
+
+msg_info "Starting VM"
+qm start $VMID >/dev/null
+msg_ok "VM started"
+
+automate_installer
+
+msg_ok "Completed successfully!"
+echo -e "${YW}Expected result:${CL}"
+echo -e " - OPNsense installed on disk"
+echo -e " - Guest rebooted on system disk"
+echo -e " - Default LAN configuration kept during automated setup"
+echo -e " - Web UI should answer on https://192.168.1.1 unless interface naming/order differs"
+echo -e "${RD}Warning:${CL} This automation depends on the exact installer screens and may need timing tweaks on your host."
