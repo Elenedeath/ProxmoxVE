@@ -26,6 +26,7 @@ ISO_ARCH="amd64"
 ISO_FILENAME="OPNsense-${var_version}-${ISO_TYPE}-${ISO_ARCH}.iso.bz2"
 ISO_RAW_FILENAME="OPNsense-${var_version}-${ISO_TYPE}-${ISO_ARCH}.iso"
 INSTALL_ROOT_PASSWORD="opnsense"
+FORCE_ISO_DOWNLOAD="no"
 
 GEN_MAC=02:$(openssl rand -hex 5 | awk '{print toupper($0)}' | sed 's/\(..\)/\1:/g; s/.$//')
 GEN_MAC_LAN=02:$(openssl rand -hex 5 | awk '{print toupper($0)}' | sed 's/\(..\)/\1:/g; s/.$//')
@@ -293,6 +294,12 @@ function default_settings() {
       exit_script
     fi
   fi
+
+  if whiptail --backtitle "Proxmox VE Helper Scripts" --title "ISO CACHE" --yesno "Reuse local OPNsense ISO if already present?" 10 62; then
+    FORCE_ISO_DOWNLOAD="no"
+  else
+    FORCE_ISO_DOWNLOAD="yes"
+  fi
 }
 
 function start_script() {
@@ -319,6 +326,42 @@ function find_opnsense_iso_url() {
   return 1
 }
 
+function resolve_iso_storage_dir() {
+  case "$ISO_STORAGE" in
+    local)
+      echo "/var/lib/vz/template/iso"
+      ;;
+    *)
+      echo "/var/lib/vz/template/iso"
+      ;;
+  esac
+}
+
+function ensure_opnsense_iso() {
+  local iso_dir
+  iso_dir="$(resolve_iso_storage_dir)"
+  local cached_iso="${iso_dir}/${ISO_RAW_FILENAME}"
+
+  if [ "$FORCE_ISO_DOWNLOAD" != "yes" ] && [ -f "$cached_iso" ]; then
+    msg_ok "Reusing existing ISO ${CL}${BL}${cached_iso}${CL}"
+    return 0
+  fi
+
+  msg_info "Downloading official OPNsense ISO archive"
+  curl -f#SL -o "${ISO_FILENAME}" "$ISO_URL"
+  echo -en "\e[1A\e[0K"
+  msg_ok "Downloaded ${CL}${BL}${ISO_FILENAME}${CL}"
+
+  msg_info "Decompressing ISO archive"
+  bzip2 -df "${ISO_FILENAME}"
+  msg_ok "Decompressed ${CL}${BL}${ISO_RAW_FILENAME}${CL}"
+
+  msg_info "Copying ISO into Proxmox ISO storage"
+  mkdir -p "$iso_dir"
+  cp -f "${ISO_RAW_FILENAME}" "$cached_iso"
+  msg_ok "ISO copied to ${CL}${BL}${cached_iso}${CL}"
+}
+
 function automate_installer() {
   msg_info "Waiting for OPNsense live ISO to boot"
   wait_for_boot 90
@@ -340,11 +383,11 @@ function automate_installer() {
   send_key_to_vm ret
   wait_for_boot 2
 
-  msg_info "Selecting UFS"
+  msg_info "Selecting filesystem option"
   send_key_to_vm ret
   wait_for_boot 2
 
-  msg_info "Confirming target disk"
+  msg_info "Selecting target disk"
   send_key_to_vm spc
   send_key_to_vm ret
   wait_for_boot 2
@@ -354,7 +397,7 @@ function automate_installer() {
   send_key_to_vm ret
   wait_for_boot 2
 
-  msg_info "Accepting recommended swap"
+  msg_info "Accepting swap recommendation if prompted"
   send_key_to_vm ret
   wait_for_boot 15
 
@@ -363,7 +406,7 @@ function automate_installer() {
   send_line_to_vm "${INSTALL_ROOT_PASSWORD}"
   wait_for_boot 2
 
-  msg_info "Completing installation and reboot request"
+  msg_info "Completing installation"
   send_key_to_vm ret
   wait_for_boot 35
 
@@ -375,29 +418,9 @@ function automate_installer() {
   qm reset $VMID >/dev/null
   wait_for_boot 70
 
-  msg_info "Skipping manual VLAN assignment and accepting defaults"
+  msg_info "Skipping manual interface assignment to keep defaults"
   send_key_to_vm ret
-  wait_for_boot 10
-
-  msg_info "Logging into installed system"
-  send_line_to_vm "root"
-  send_line_to_vm "${INSTALL_ROOT_PASSWORD}"
-  wait_for_boot 3
-
-  msg_info "Opening console menu option 2 for IP configuration"
-  send_line_to_vm "2"
-  wait_for_boot 2
-
-  msg_info "Configuring LAN interface"
-  send_line_to_vm "1"
-  send_line_to_vm "y"
-  send_line_to_vm "n"
-  send_line_to_vm "n"
-  send_line_to_vm " "
-  send_line_to_vm "n"
-  send_line_to_vm "n"
-  send_line_to_vm "n"
-  wait_for_boot 15
+  wait_for_boot 8
 
   msg_ok "Automatic install flow sent to guest"
 }
@@ -431,19 +454,7 @@ ISO_URL=$(find_opnsense_iso_url) || {
 }
 msg_ok "Download URL: ${CL}${BL}${ISO_URL}${CL}"
 
-msg_info "Downloading official OPNsense ISO archive"
-curl -f#SL -o "${ISO_FILENAME}" "$ISO_URL"
-echo -en "\e[1A\e[0K"
-msg_ok "Downloaded ${CL}${BL}${ISO_FILENAME}${CL}"
-
-msg_info "Decompressing ISO archive"
-bzip2 -d "${ISO_FILENAME}"
-msg_ok "Decompressed ${CL}${BL}${ISO_RAW_FILENAME}${CL}"
-
-msg_info "Copying ISO into Proxmox ISO storage"
-mkdir -p "/var/lib/vz/template/iso"
-cp "$ISO_RAW_FILENAME" "/var/lib/vz/template/iso/${ISO_RAW_FILENAME}"
-msg_ok "ISO copied to ${CL}${BL}/var/lib/vz/template/iso/${ISO_RAW_FILENAME}${CL}"
+ensure_opnsense_iso
 
 msg_info "Creating OPNsense VM"
 qm create $VMID -agent 1${MACHINE} -tablet 0 -localtime 1 -bios ovmf${CPU_TYPE} -cores $CORE_COUNT -memory $RAM_SIZE -name $HN -tags community-script -onboot 1 -ostype l26 -scsihw virtio-scsi-pci >/dev/null
@@ -470,7 +481,7 @@ if [ -n "$WAN_BRG" ]; then
   msg_ok "WAN interface added"
 fi
 
-DESCRIPTION="<div align='center'><h2>OPNsense 26.7 VM (Official ISO)</h2><p>VM créée pour installation automatisée via l'ISO officielle OPNsense.</p></div>"
+DESCRIPTION="<div align='center'><h2>OPNsense 26.7 VM (Official ISO)</h2><p>VM créée pour installation automatisée via l'ISO officielle OPNsense avec cache ISO local.</p></div>"
 qm set $VMID -description "$DESCRIPTION" >/dev/null
 
 msg_info "Starting VM"
@@ -482,7 +493,6 @@ automate_installer
 msg_ok "Completed successfully!"
 echo -e "${YW}Expected result:${CL}"
 echo -e " - OPNsense installed on disk"
-echo -e " - Guest rebooted on system disk"
-echo -e " - Default LAN configuration kept during automated setup"
-echo -e " - Web UI should answer on https://192.168.1.1 unless interface naming/order differs"
-echo -e "${RD}Warning:${CL} This automation depends on the exact installer screens and may need timing tweaks on your host."
+echo -e " - Local ISO reused on next runs unless you force re-download"
+echo -e " - Web UI may be reachable on https://192.168.1.1 if default LAN assignment is preserved"
+echo -e "${RD}Warning:${CL} Installer automation depends on exact screen order and may need timing tweaks."
