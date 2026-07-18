@@ -34,6 +34,8 @@ LAN_STATIC_GW=""
 ENABLE_LAN_DHCP_SERVER="n"
 LAN_DHCP_RANGE_START=""
 LAN_DHCP_RANGE_END=""
+POST_INSTALL_REBOOT_WAIT="110"
+FINAL_INSTALL_WAIT="180"
 
 GEN_MAC=02:$(openssl rand -hex 5 | awk '{print toupper($0)}' | sed 's/\(..\)/\1:/g; s/.$//')
 GEN_MAC_LAN=02:$(openssl rand -hex 5 | awk '{print toupper($0)}' | sed 's/\(..\)/\1:/g; s/.$//')
@@ -335,12 +337,8 @@ function find_opnsense_iso_url() {
 
 function resolve_iso_storage_dir() {
   case "$ISO_STORAGE" in
-    local)
-      echo "/var/lib/vz/template/iso"
-      ;;
-    *)
-      echo "/var/lib/vz/template/iso"
-      ;;
+    local) echo "/var/lib/vz/template/iso" ;;
+    *) echo "/var/lib/vz/template/iso" ;;
   esac
 }
 
@@ -448,7 +446,20 @@ function automate_installer() {
   msg_info "Confirming destructive install"
   send_key_to_vm left
   send_key_to_vm ret
-  wait_for_boot 150
+  wait_for_boot 5
+
+  msg_info "Accepting recommended swap if shown"
+  send_key_to_vm ret
+  wait_for_boot 8
+
+  msg_info "Setting root password"
+  send_line_to_vm "${INSTALL_ROOT_PASSWORD}"
+  send_line_to_vm "${INSTALL_ROOT_PASSWORD}"
+  wait_for_boot 6
+
+  msg_info "Completing installation"
+  send_key_to_vm ret
+  wait_for_boot ${FINAL_INSTALL_WAIT}
 
   msg_info "Switching boot order to disk"
   qm set $VMID -boot order='scsi0;ide2' >/dev/null
@@ -456,7 +467,7 @@ function automate_installer() {
 
   msg_info "Rebooting VM from installed disk"
   qm reset $VMID >/dev/null
-  wait_for_boot 85
+  wait_for_boot ${POST_INSTALL_REBOOT_WAIT}
 
   msg_info "Waking console before login"
   send_key_to_vm ret
@@ -532,7 +543,7 @@ cat <<EOF
 <img src='https://raw.githubusercontent.com/michelroegl-brunner/ProxmoxVE/refs/heads/develop/misc/images/logo-81x112.png' alt='Logo' style='width:81px;height:112px;'/>
 </a>
 
-<h2 style='font-size: 24px; margin: 20px 0;'>OPNsense ${var_version} VM (Official ISO)</h2>
+<h2 style='font-size: 24px; margin: 20px 0;'>OPNsense VM</h2>
 
 <p style='margin: 16px 0;'>
 <a href='https://ko-fi.com/community_scripts' target='_blank' rel='noopener noreferrer'>
@@ -566,7 +577,7 @@ automate_installer
 msg_ok "Completed successfully!"
 echo -e "${YW}Expected result:${CL}"
 echo -e " - OPNsense installed on disk"
-echo -e " - Local ISO reused on next runs unless you force re-download"
-echo -e " - Interfaces assigned automatically based on detected/default install flow"
-echo -e " - LAN configured automatically via console flow"
-echo -e "${RD}Warning:${CL} Console automation still depends on exact screen order and timings."
+echo -e " - Guest rebooted on system disk"
+echo -e " - Default LAN configuration kept during automated setup"
+echo -e " - Web UI should answer on https://192.168.1.1 unless interface naming/order differs"
+echo -e "${RD}Warning:${CL} This automation depends on the exact installer screens and may need timing tweaks on your host."
