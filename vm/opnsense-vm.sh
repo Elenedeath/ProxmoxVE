@@ -372,6 +372,7 @@ function ensure_opnsense_iso() {
 function configure_lan_ip_after_login() {
   msg_info "Logging into installed system"
   send_line_to_vm "root"
+  wait_for_boot 2
   send_line_to_vm "${INSTALL_ROOT_PASSWORD}"
   wait_for_boot 4
 
@@ -455,7 +456,13 @@ function automate_installer() {
 
   msg_info "Rebooting VM from installed disk"
   qm reset $VMID >/dev/null
-  wait_for_boot 70
+  wait_for_boot 85
+
+  msg_info "Waking console before login"
+  send_key_to_vm ret
+  wait_for_boot 2
+  send_key_to_vm ret
+  wait_for_boot 2
 
   configure_lan_ip_after_login
 
