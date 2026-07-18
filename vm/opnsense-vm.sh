@@ -34,8 +34,6 @@ LAN_STATIC_GW=""
 ENABLE_LAN_DHCP_SERVER="n"
 LAN_DHCP_RANGE_START=""
 LAN_DHCP_RANGE_END=""
-POST_INSTALL_REBOOT_WAIT="110"
-FINAL_INSTALL_WAIT="180"
 
 GEN_MAC=02:$(openssl rand -hex 5 | awk '{print toupper($0)}' | sed 's/\(..\)/\1:/g; s/.$//')
 GEN_MAC_LAN=02:$(openssl rand -hex 5 | awk '{print toupper($0)}' | sed 's/\(..\)/\1:/g; s/.$//')
@@ -446,7 +444,7 @@ function automate_installer() {
   msg_info "Confirming destructive install"
   send_key_to_vm left
   send_key_to_vm ret
-  wait_for_boot 5
+  wait_for_boot 180
 
   msg_info "Accepting recommended swap if shown"
   send_key_to_vm ret
@@ -459,7 +457,7 @@ function automate_installer() {
 
   msg_info "Completing installation"
   send_key_to_vm ret
-  wait_for_boot ${FINAL_INSTALL_WAIT}
+  wait_for_boot 15
 
   msg_info "Switching boot order to disk"
   qm set $VMID -boot order='scsi0;ide2' >/dev/null
@@ -467,7 +465,7 @@ function automate_installer() {
 
   msg_info "Rebooting VM from installed disk"
   qm reset $VMID >/dev/null
-  wait_for_boot ${POST_INSTALL_REBOOT_WAIT}
+  wait_for_boot 85
 
   msg_info "Waking console before login"
   send_key_to_vm ret
