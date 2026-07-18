@@ -27,6 +27,15 @@ ISO_FILENAME="OPNsense-${var_version}-${ISO_TYPE}-${ISO_ARCH}.iso.bz2"
 ISO_RAW_FILENAME="OPNsense-${var_version}-${ISO_TYPE}-${ISO_ARCH}.iso"
 INSTALL_ROOT_PASSWORD="opnsense"
 FORCE_ISO_DOWNLOAD="no"
+LAN_IP_MODE="dhcp"
+LAN_STATIC_IP="192.168.1.1"
+LAN_STATIC_MASK="24"
+LAN_STATIC_GW=""
+ENABLE_LAN_DHCP_SERVER="n"
+LAN_DHCP_RANGE_START=""
+LAN_DHCP_RANGE_END=""
+ASSIGN_LAN_IF="vtnet0"
+ASSIGN_WAN_IF="vtnet1"
 
 GEN_MAC=02:$(openssl rand -hex 5 | awk '{print toupper($0)}' | sed 's/\(..\)/\1:/g; s/.$//')
 GEN_MAC_LAN=02:$(openssl rand -hex 5 | awk '{print toupper($0)}' | sed 's/\(..\)/\1:/g; s/.$//')
@@ -362,6 +371,66 @@ function ensure_opnsense_iso() {
   msg_ok "ISO copied to ${CL}${BL}${cached_iso}${CL}"
 }
 
+function configure_installed_interfaces() {
+  msg_info "Assigning interfaces after install"
+  send_line_to_vm "n"
+  send_line_to_vm "${ASSIGN_LAN_IF}"
+  if [ -n "$WAN_BRG" ]; then
+    send_line_to_vm "${ASSIGN_WAN_IF}"
+  else
+    send_line_to_vm ""
+  fi
+  send_line_to_vm ""
+  send_line_to_vm "y"
+  wait_for_boot 15
+  msg_ok "Interface assignment sent"
+}
+
+function configure_lan_ip() {
+  msg_info "Logging into installed system"
+  send_line_to_vm "root"
+  send_line_to_vm "${INSTALL_ROOT_PASSWORD}"
+  wait_for_boot 4
+
+  msg_info "Opening console menu option 2 for IP configuration"
+  send_line_to_vm "2"
+  wait_for_boot 2
+
+  if [ "$LAN_IP_MODE" = "dhcp" ]; then
+    msg_info "Configuring LAN for DHCP"
+    send_line_to_vm "1"
+    send_line_to_vm "y"
+    send_line_to_vm "n"
+    send_line_to_vm "n"
+    send_line_to_vm " "
+    send_line_to_vm "n"
+    send_line_to_vm "n"
+    send_line_to_vm "n"
+  else
+    msg_info "Configuring static LAN address"
+    send_line_to_vm "1"
+    send_line_to_vm "n"
+    send_line_to_vm "${LAN_STATIC_IP}"
+    send_line_to_vm "${LAN_STATIC_MASK}"
+    send_line_to_vm "${LAN_STATIC_GW}"
+    send_line_to_vm "n"
+    send_line_to_vm " "
+    send_line_to_vm "n"
+    send_line_to_vm "${ENABLE_LAN_DHCP_SERVER}"
+    if [ "$ENABLE_LAN_DHCP_SERVER" = "y" ]; then
+      send_line_to_vm "${LAN_DHCP_RANGE_START}"
+      send_line_to_vm "${LAN_DHCP_RANGE_END}"
+    fi
+    send_line_to_vm "n"
+    send_line_to_vm "n"
+    send_line_to_vm "n"
+    send_line_to_vm "n"
+    send_line_to_vm "n"
+  fi
+  wait_for_boot 15
+  msg_ok "LAN configuration sent"
+}
+
 function automate_installer() {
   msg_info "Waiting for OPNsense live ISO to boot"
   wait_for_boot 90
@@ -418,9 +487,8 @@ function automate_installer() {
   qm reset $VMID >/dev/null
   wait_for_boot 70
 
-  msg_info "Skipping manual interface assignment to keep defaults"
-  send_key_to_vm ret
-  wait_for_boot 8
+  configure_installed_interfaces
+  configure_lan_ip
 
   msg_ok "Automatic install flow sent to guest"
 }
@@ -481,7 +549,7 @@ if [ -n "$WAN_BRG" ]; then
   msg_ok "WAN interface added"
 fi
 
-DESCRIPTION="<div align='center'><h2>OPNsense 26.7 VM (Official ISO)</h2><p>VM créée pour installation automatisée via l'ISO officielle OPNsense avec cache ISO local.</p></div>"
+DESCRIPTION="<div align='center'><h2>OPNsense 26.7 VM (Official ISO)</h2><p>VM créée pour installation automatisée via l'ISO officielle OPNsense avec cache ISO local et configuration LAN.</p></div>"
 qm set $VMID -description "$DESCRIPTION" >/dev/null
 
 msg_info "Starting VM"
@@ -494,5 +562,6 @@ msg_ok "Completed successfully!"
 echo -e "${YW}Expected result:${CL}"
 echo -e " - OPNsense installed on disk"
 echo -e " - Local ISO reused on next runs unless you force re-download"
-echo -e " - Web UI may be reachable on https://192.168.1.1 if default LAN assignment is preserved"
-echo -e "${RD}Warning:${CL} Installer automation depends on exact screen order and may need timing tweaks."
+echo -e " - Interfaces assigned automatically (LAN=${ASSIGN_LAN_IF}, WAN=${ASSIGN_WAN_IF})"
+echo -e " - LAN configured automatically via console flow"
+echo -e "${RD}Warning:${CL} Installer and console automation still depends on exact screen order and timings."
