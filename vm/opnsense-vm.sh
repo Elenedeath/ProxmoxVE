@@ -34,8 +34,6 @@ LAN_STATIC_GW=""
 ENABLE_LAN_DHCP_SERVER="n"
 LAN_DHCP_RANGE_START=""
 LAN_DHCP_RANGE_END=""
-ASSIGN_LAN_IF="vtnet0"
-ASSIGN_WAN_IF="vtnet1"
 
 GEN_MAC=02:$(openssl rand -hex 5 | awk '{print toupper($0)}' | sed 's/\(..\)/\1:/g; s/.$//')
 GEN_MAC_LAN=02:$(openssl rand -hex 5 | awk '{print toupper($0)}' | sed 's/\(..\)/\1:/g; s/.$//')
@@ -371,22 +369,7 @@ function ensure_opnsense_iso() {
   msg_ok "ISO copied to ${CL}${BL}${cached_iso}${CL}"
 }
 
-function configure_installed_interfaces() {
-  msg_info "Assigning interfaces after install"
-  send_line_to_vm "n"
-  send_line_to_vm "${ASSIGN_LAN_IF}"
-  if [ -n "$WAN_BRG" ]; then
-    send_line_to_vm "${ASSIGN_WAN_IF}"
-  else
-    send_line_to_vm ""
-  fi
-  send_line_to_vm ""
-  send_line_to_vm "y"
-  wait_for_boot 15
-  msg_ok "Interface assignment sent"
-}
-
-function configure_lan_ip() {
+function configure_lan_ip_after_login() {
   msg_info "Logging into installed system"
   send_line_to_vm "root"
   send_line_to_vm "${INSTALL_ROOT_PASSWORD}"
@@ -464,20 +447,7 @@ function automate_installer() {
   msg_info "Confirming destructive install"
   send_key_to_vm left
   send_key_to_vm ret
-  wait_for_boot 2
-
-  msg_info "Accepting swap recommendation if prompted"
-  send_key_to_vm ret
-  wait_for_boot 15
-
-  msg_info "Setting root password"
-  send_line_to_vm "${INSTALL_ROOT_PASSWORD}"
-  send_line_to_vm "${INSTALL_ROOT_PASSWORD}"
-  wait_for_boot 2
-
-  msg_info "Completing installation"
-  send_key_to_vm ret
-  wait_for_boot 35
+  wait_for_boot 40
 
   msg_info "Switching boot order to disk"
   qm set $VMID -boot order='scsi0;ide2' >/dev/null
@@ -487,8 +457,7 @@ function automate_installer() {
   qm reset $VMID >/dev/null
   wait_for_boot 70
 
-  configure_installed_interfaces
-  configure_lan_ip
+  configure_lan_ip_after_login
 
   msg_ok "Automatic install flow sent to guest"
 }
@@ -549,7 +518,7 @@ if [ -n "$WAN_BRG" ]; then
   msg_ok "WAN interface added"
 fi
 
-DESCRIPTION="<div align='center'><h2>OPNsense 26.7 VM (Official ISO)</h2><p>VM créée pour installation automatisée via l'ISO officielle OPNsense avec cache ISO local et configuration LAN.</p></div>"
+DESCRIPTION="<div align='center'><h2>OPNsense 26.7 VM (Official ISO)</h2><p>VM créée pour installation automatisée via l'ISO officielle OPNsense avec cache ISO local, sans assignation post-install forcée ni étapes swap/password automatiques.</p></div>"
 qm set $VMID -description "$DESCRIPTION" >/dev/null
 
 msg_info "Starting VM"
@@ -562,6 +531,7 @@ msg_ok "Completed successfully!"
 echo -e "${YW}Expected result:${CL}"
 echo -e " - OPNsense installed on disk"
 echo -e " - Local ISO reused on next runs unless you force re-download"
-echo -e " - Interfaces assigned automatically (LAN=${ASSIGN_LAN_IF}, WAN=${ASSIGN_WAN_IF})"
-echo -e " - LAN configured automatically via console flow"
-echo -e "${RD}Warning:${CL} Installer and console automation still depends on exact screen order and timings."
+echo -e " - No forced interface reassignment after install"
+echo -e " - No automated swap/password steps during install"
+echo -e " - LAN configured only after login through console menu option 2"
+echo -e "${RD}Warning:${CL} Console automation still depends on exact screen order and timings."
