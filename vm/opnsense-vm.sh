@@ -468,16 +468,7 @@ function automate_installer() {
     send_key_to_vm down
     send_key_to_vm spc
     send_key_to_vm ret
-    wait_for_boot 2
-
-    msg_info "Confirming destructive install"
-    send_key_to_vm left
-    send_key_to_vm ret
-    wait_for_boot 420
-
-    msg_info "Accepting recommended swap if shown"
-    send_key_to_vm ret
-    wait_for_boot 8
+    wait_for_boot 275
   else
     msg_info "Selecting ZFS filesystem"
     send_key_to_vm ret
@@ -495,8 +486,7 @@ function automate_installer() {
     msg_info "Confirming destructive install"
     send_key_to_vm left
     send_key_to_vm ret
-    wait_for_boot 420
-  fi
+    wait_for_boot 300
 
   msg_info "Setting root password"
   send_line_to_vm "${INSTALL_ROOT_PASSWORD}"
@@ -506,6 +496,7 @@ function automate_installer() {
   msg_info "Completing installation"
   send_key_to_vm ret
   wait_for_boot 15
+  fi
 
   msg_info "Switching boot order to disk"
   qm set $VMID -boot order='scsi0;ide2' >/dev/null
