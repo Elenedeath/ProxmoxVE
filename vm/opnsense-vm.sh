@@ -474,8 +474,14 @@ function automate_installer() {
     send_key_to_vm ret
     wait_for_boot 280
 
+    msg_info "Setting root password"
+    send_key_to_vm ret
+    send_line_to_vm "${INSTALL_ROOT_PASSWORD}"
+    send_line_to_vm "${INSTALL_ROOT_PASSWORD}"
+    wait_for_boot 6
 
     msg_info "Completing installation"
+    send_key_to_vm down
     send_key_to_vm ret
     wait_for_boot 15
   else
