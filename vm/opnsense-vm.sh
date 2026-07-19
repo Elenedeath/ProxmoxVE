@@ -203,6 +203,8 @@ function send_line_to_vm() {
       "*") character="shift-8" ;;
       "(") character="shift-9" ;;
       ")") character="shift-0" ;;
+      "1") character="shift-1" ;;
+      "2") character="shift-2" ;;
     esac
     qm sendkey $VMID "$character" >/dev/null
     sleep 0.03
@@ -391,12 +393,12 @@ function configure_lan_ip_after_login() {
   wait_for_boot 4
 
   msg_info "Opening console menu option 2 for IP configuration"
-  send_key_to_vm 2
+  send_line_to_vm "2"
   wait_for_boot 2
 
   if [ "$LAN_IP_MODE" = "dhcp" ]; then
     msg_info "Configuring LAN for DHCP"
-    send_key_to_vm 1
+    send_line_to_vm "1"
     send_line_to_vm "y"
     send_line_to_vm "n"
     send_line_to_vm "n"
@@ -406,7 +408,7 @@ function configure_lan_ip_after_login() {
     send_line_to_vm "n"
   else
     msg_info "Configuring static LAN address"
-    send_key_to_vm 1
+    send_line_to_vm "1"
     send_line_to_vm "n"
     send_line_to_vm "${LAN_STATIC_IP}"
     send_line_to_vm "${LAN_STATIC_MASK}"
