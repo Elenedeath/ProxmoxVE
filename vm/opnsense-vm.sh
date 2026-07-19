@@ -509,8 +509,12 @@ function automate_installer() {
   qm set $VMID -delete ide2 >/dev/null
   msg_ok "Installation ISO detached"
 
-  msg_info "Rebooting VM from installed disk"
-  qm reset $VMID >/dev/null
+  msg_info "Shutting down guest cleanly"
+  qm shutdown $VMID >/dev/null
+  wait_for_boot 40
+
+  msg_info "Starting VM on installed disk"
+  qm start $VMID >/dev/null
   wait_for_boot 85
 
   msg_info "Waking console before login"
