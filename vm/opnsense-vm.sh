@@ -27,6 +27,7 @@ ISO_FILENAME="OPNsense-${var_version}-${ISO_TYPE}-${ISO_ARCH}.iso.bz2"
 ISO_RAW_FILENAME="OPNsense-${var_version}-${ISO_TYPE}-${ISO_ARCH}.iso"
 INSTALL_ROOT_PASSWORD="opnsense"
 FORCE_ISO_DOWNLOAD="no"
+KEYMAP_MODE="default"
 LAN_IP_MODE="dhcp"
 LAN_STATIC_IP="192.168.1.1"
 LAN_STATIC_MASK="24"
@@ -302,6 +303,14 @@ function default_settings() {
     fi
   fi
 
+  if whiptail --backtitle "Proxmox VE Helper Scripts" --title "KEYMAP" --yesno "Use default keymap?
+
+Choose Yes for default keymap, No for French (accent keys)." 11 66; then
+    KEYMAP_MODE="default"
+  else
+    KEYMAP_MODE="french-accent"
+  fi
+
   if whiptail --backtitle "Proxmox VE Helper Scripts" --title "ISO CACHE" --yesno "Reuse local OPNsense ISO if already present?" 10 62; then
     FORCE_ISO_DOWNLOAD="no"
   else
@@ -424,13 +433,18 @@ function automate_installer() {
   msg_info "Waiting for installer menu"
   wait_for_boot 12
 
-  msg_info "Selecting French (accent keys) keymap"
-  send_key_to_vm f
-  wait_for_boot 1
-  send_key_to_vm down
-  send_key_to_vm down
-  send_key_to_vm down
-  send_key_to_vm ret
+  if [ "$KEYMAP_MODE" = "default" ]; then
+    msg_info "Accepting default keymap"
+    send_key_to_vm ret
+  else
+    msg_info "Selecting French (accent keys) keymap"
+    for _ in {1..26}; do
+      send_key_to_vm down
+    done
+    send_key_to_vm ret
+    wait_for_boot 2
+    send_key_to_vm ret
+  fi
   wait_for_boot 2
 
   msg_info "Choosing Quick/Easy install"
