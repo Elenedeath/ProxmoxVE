@@ -473,18 +473,6 @@ function automate_installer() {
     send_key_to_vm spc
     send_key_to_vm ret
     wait_for_boot 280
-
-    msg_info "Setting root password"
-    send_key_to_vm ret
-    send_line_to_vm "${INSTALL_ROOT_PASSWORD}"
-    send_line_to_vm "${INSTALL_ROOT_PASSWORD}"
-    wait_for_boot 10
-
-    msg_info "Completing installation"
-    send_key_to_vm down
-    send_key_to_vm ret
-    wait_for_boot 15
-    send_key_to_vm ret
   else
     msg_info "Selecting ZFS filesystem"
     send_key_to_vm ret
@@ -502,18 +490,20 @@ function automate_installer() {
     msg_info "Confirming destructive install"
     send_key_to_vm left
     send_key_to_vm ret
-    wait_for_boot 300
+    wait_for_boot 280
+  fi
 
   msg_info "Setting root password"
+  send_key_to_vm ret
   send_line_to_vm "${INSTALL_ROOT_PASSWORD}"
   send_line_to_vm "${INSTALL_ROOT_PASSWORD}"
-  wait_for_boot 6
+  wait_for_boot 10
 
   msg_info "Completing installation"
+  send_key_to_vm down
   send_key_to_vm ret
   wait_for_boot 15
   send_key_to_vm ret
-  fi
 
   msg_info "Rebooting VM from installed disk"
   wait_for_boot 85
