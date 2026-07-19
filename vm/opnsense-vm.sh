@@ -502,14 +502,14 @@ function automate_installer() {
   msg_info "Completing installation"
   send_key_to_vm down
   send_key_to_vm ret
-  wait_for_boot 15
+  wait_for_boot 5
   send_key_to_vm down
   send_key_to_vm ret
 
   msg_info "Detaching installation ISO"
   qm set $VMID -delete ide2 >/dev/null
   msg_ok "Installation ISO detached"
-  wait_for_boot 10
+  wait_for_boot 20
 
   msg_info "Starting VM on installed disk"
   qm start $VMID >/dev/null
