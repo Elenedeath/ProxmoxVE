@@ -150,7 +150,7 @@ function send_line_to_vm() {
       ",") character="comma" ;;
       ".")
         if [ "$KEYMAP_MODE" = "french-accent" ]; then
-          character="shift-semicolon"
+          character="shift-comma"
         else
           character="dot"
         fi
@@ -172,7 +172,7 @@ function send_line_to_vm() {
         if [ "$KEYMAP_MODE" = "french-accent" ]; then
           character="dot"
         else
-          character="shift-comma"
+          character="shift-semicolon"
         fi
         ;;
       "|") character="shift-backslash" ;;
