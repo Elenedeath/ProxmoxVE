@@ -473,6 +473,11 @@ function automate_installer() {
     send_key_to_vm spc
     send_key_to_vm ret
     wait_for_boot 280
+
+
+    msg_info "Completing installation"
+    send_key_to_vm ret
+    wait_for_boot 15
   else
     msg_info "Selecting ZFS filesystem"
     send_key_to_vm ret
@@ -503,7 +508,6 @@ function automate_installer() {
   fi
 
   msg_info "Rebooting VM from installed disk"
-  qm reset $VMID >/dev/null
   wait_for_boot 85
 
   msg_info "Waking console before login"
