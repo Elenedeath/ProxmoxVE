@@ -478,7 +478,7 @@ function automate_installer() {
     send_key_to_vm ret
     send_line_to_vm "${INSTALL_ROOT_PASSWORD}"
     send_line_to_vm "${INSTALL_ROOT_PASSWORD}"
-    wait_for_boot 6
+    wait_for_boot 10
 
     msg_info "Completing installation"
     send_key_to_vm down
