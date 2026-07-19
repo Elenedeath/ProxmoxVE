@@ -466,8 +466,7 @@ function configure_lan_ip_after_login() {
       send_line_to_vm "${LAN_DHCP_RANGE_START}"
       send_line_to_vm "${LAN_DHCP_RANGE_END}"
     fi
-    send_line_to_vm "n"
-    send_line_to_vm "n"
+    send_line_to_vm " "
     send_line_to_vm "n"
     send_line_to_vm "n"
     send_line_to_vm "n"
