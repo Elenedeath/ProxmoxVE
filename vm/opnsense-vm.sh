@@ -458,6 +458,10 @@ function automate_installer() {
   fi
   wait_for_boot 2
 
+  msg_info "Switching boot order to disk"
+  qm set $VMID -boot order='scsi0;ide2' >/dev/null
+  msg_ok "Disk boot order configured"
+
   if [ "$FILESYSTEM_MODE" = "ufs" ]; then
     msg_info "Selecting UFS filesystem"
     send_key_to_vm down
@@ -497,10 +501,6 @@ function automate_installer() {
   send_key_to_vm ret
   wait_for_boot 15
   fi
-
-  msg_info "Switching boot order to disk"
-  qm set $VMID -boot order='scsi0;ide2' >/dev/null
-  msg_ok "Disk boot order configured"
 
   msg_info "Rebooting VM from installed disk"
   qm reset $VMID >/dev/null
@@ -616,5 +616,4 @@ echo -e "${YW}Expected result:${CL}"
 echo -e " - OPNsense installed on disk"
 echo -e " - Guest rebooted on system disk"
 echo -e " - Default LAN configuration kept during automated setup"
-echo -e " - Web UI should answer on https://192.168.1.1 unless interface naming/order differs"
 echo -e "${RD}Warning:${CL} This automation depends on the exact installer screens and may need timing tweaks on your host."
