@@ -465,6 +465,7 @@ function automate_installer() {
     wait_for_boot 2
 
     msg_info "Selecting target disk"
+    send_key_to_vm down
     send_key_to_vm spc
     send_key_to_vm ret
     wait_for_boot 2
