@@ -441,6 +441,8 @@ function automate_installer() {
     for _ in {1..27}; do
       send_key_to_vm down
     done
+    send_key_to_vm ret
+    wait_for_boot 2
     send_key_to_vm up
     wait_for_boot 2
     send_key_to_vm ret
