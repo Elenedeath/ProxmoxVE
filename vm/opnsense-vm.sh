@@ -148,7 +148,13 @@ function send_line_to_vm() {
       "-") character="minus" ;;
       "=") character="equal" ;;
       ",") character="comma" ;;
-      ".") character="dot" ;;
+      ".")
+        if [ "$KEYMAP_MODE" = "french-accent" ]; then
+          character="shift-semicolon"
+        else
+          character="dot"
+        fi
+        ;;
       "/") character="slash" ;;
       "'") character="apostrophe" ;;
       ";") character="semicolon" ;;
@@ -162,7 +168,13 @@ function send_line_to_vm() {
       "<") character="shift-comma" ;;
       ">") character="shift-dot" ;;
       '"') character="shift-apostrophe" ;;
-      ":") character="shift-semicolon" ;;
+      ":")
+        if [ "$KEYMAP_MODE" = "french-accent" ]; then
+          character="dot"
+        else
+          character="shift-semicolon"
+        fi
+        ;;
       "|") character="shift-backslash" ;;
       "~") character="shift-grave_accent" ;;
       "{") character="shift-bracket_left" ;;
@@ -208,6 +220,7 @@ function send_line_to_vm() {
           character="shift-$character"
         fi
         ;;
+        
     esac
     qm sendkey $VMID "$character" >/dev/null
     sleep 0.03
