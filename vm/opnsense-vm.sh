@@ -278,6 +278,46 @@ function get_available_bridges() {
   ip -o link show type bridge 2>/dev/null | awk -F': ' '{print $2}' | sort
 }
 
+function configure_lan_mode() {
+  if LAN_MODE_SELECTION=$(whiptail --backtitle "Proxmox VE Helper Scripts" --title "LAN CONFIGURATION" --radiolist --cancel-button Exit-Script "Choose LAN IP mode for OPNsense:" 15 72 2 "dhcp" "DHCP on LAN interface" ON "static" "Static IP on LAN interface" OFF 3>&1 1>&2 2>&3); then
+    LAN_IP_MODE="$LAN_MODE_SELECTION"
+  else
+    exit_script
+  fi
+
+  if [ "$LAN_IP_MODE" = "static" ]; then
+    if ! LAN_STATIC_IP=$(whiptail --backtitle "Proxmox VE Helper Scripts" --title "LAN STATIC IP" --inputbox "Enter LAN static IP address:" 10 60 "$LAN_STATIC_IP" 3>&1 1>&2 2>&3); then
+      exit_script
+    fi
+
+    if ! LAN_STATIC_MASK=$(whiptail --backtitle "Proxmox VE Helper Scripts" --title "LAN PREFIX" --inputbox "Enter LAN CIDR prefix length (e.g. 24):" 10 60 "$LAN_STATIC_MASK" 3>&1 1>&2 2>&3); then
+      exit_script
+    fi
+
+    if ! LAN_STATIC_GW=$(whiptail --backtitle "Proxmox VE Helper Scripts" --title "LAN GATEWAY" --inputbox "Enter upstream gateway for LAN (leave empty if none):" 10 60 "$LAN_STATIC_GW" 3>&1 1>&2 2>&3); then
+      exit_script
+    fi
+
+    if whiptail --backtitle "Proxmox VE Helper Scripts" --title "LAN DHCP SERVER" --yesno "Enable DHCP server on LAN?" 10 60; then
+      ENABLE_LAN_DHCP_SERVER="y"
+      if ! LAN_DHCP_RANGE_START=$(whiptail --backtitle "Proxmox VE Helper Scripts" --title "DHCP RANGE START" --inputbox "Enter DHCP range start address:" 10 60 "192.168.1.100" 3>&1 1>&2 2>&3); then
+        exit_script
+      fi
+      if ! LAN_DHCP_RANGE_END=$(whiptail --backtitle "Proxmox VE Helper Scripts" --title "DHCP RANGE END" --inputbox "Enter DHCP range end address:" 10 60 "192.168.1.200" 3>&1 1>&2 2>&3); then
+        exit_script
+      fi
+    else
+      ENABLE_LAN_DHCP_SERVER="n"
+      LAN_DHCP_RANGE_START=""
+      LAN_DHCP_RANGE_END=""
+    fi
+  else
+    ENABLE_LAN_DHCP_SERVER="n"
+    LAN_DHCP_RANGE_START=""
+    LAN_DHCP_RANGE_END=""
+  fi
+}
+
 function default_settings() {
   VMID=$(get_valid_nextid)
   FORMAT=",efitype=4m,pre-enrolled-keys=0"
@@ -333,6 +373,8 @@ Choose Yes for UFS, No for ZFS." 11 62; then
   else
     FILESYSTEM_MODE="zfs"
   fi
+
+  configure_lan_mode
 
   if whiptail --backtitle "Proxmox VE Helper Scripts" --title "ISO CACHE" --yesno "Reuse local OPNsense ISO if already present?" 10 62; then
     FORCE_ISO_DOWNLOAD="no"
@@ -638,5 +680,8 @@ msg_ok "Completed successfully!"
 echo -e "${YW}Expected result:${CL}"
 echo -e " - OPNsense installed on disk"
 echo -e " - Guest rebooted on system disk"
-echo -e " - Default LAN configuration kept during automated setup"
+echo -e " - LAN configured in ${LAN_IP_MODE} mode"
+if [ "$LAN_IP_MODE" = "static" ]; then
+  echo -e " - Static LAN IP: ${LAN_STATIC_IP}/${LAN_STATIC_MASK}"
+fi
 echo -e "${RD}Warning:${CL} This automation depends on the exact installer screens and may need timing tweaks on your host."
