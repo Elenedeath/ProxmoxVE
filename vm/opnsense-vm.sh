@@ -203,8 +203,20 @@ function send_line_to_vm() {
       "*") character="shift-8" ;;
       "(") character="shift-9" ;;
       ")") character="shift-0" ;;
-      "1") character="shift-1" ;;
-      "2") character="shift-2" ;;
+      "1")
+        if [ "$KEYMAP_MODE" = "french-accent" ]; then
+          character="shift-1"
+        else
+          character="1"
+        fi
+        ;;
+      "2")
+        if [ "$KEYMAP_MODE" = "french-accent" ]; then
+          character="shift-2"
+        else
+          character="2"
+        fi
+        ;;
     esac
     qm sendkey $VMID "$character" >/dev/null
     sleep 0.03
