@@ -494,7 +494,7 @@ function automate_installer() {
     msg_info "Confirming destructive install"
     send_key_to_vm left
     send_key_to_vm ret
-    wait_for_boot 220
+    wait_for_boot 300
   fi
 
   msg_info "Setting root password"
