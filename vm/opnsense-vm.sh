@@ -28,6 +28,7 @@ ISO_RAW_FILENAME="OPNsense-${var_version}-${ISO_TYPE}-${ISO_ARCH}.iso"
 INSTALL_ROOT_PASSWORD="opnsense"
 FORCE_ISO_DOWNLOAD="no"
 KEYMAP_MODE="default"
+FILESYSTEM_MODE="ufs"
 LAN_IP_MODE="dhcp"
 LAN_STATIC_IP="192.168.1.1"
 LAN_STATIC_MASK="24"
@@ -311,6 +312,14 @@ Choose Yes for default keymap, No for French (accent keys)." 11 66; then
     KEYMAP_MODE="french-accent"
   fi
 
+  if whiptail --backtitle "Proxmox VE Helper Scripts" --title "FILESYSTEM" --yesno "Use UFS filesystem?
+
+Choose Yes for UFS, No for ZFS." 11 62; then
+    FILESYSTEM_MODE="ufs"
+  else
+    FILESYSTEM_MODE="zfs"
+  fi
+
   if whiptail --backtitle "Proxmox VE Helper Scripts" --title "ISO CACHE" --yesno "Reuse local OPNsense ISO if already present?" 10 62; then
     FORCE_ISO_DOWNLOAD="no"
   else
@@ -449,24 +458,44 @@ function automate_installer() {
   fi
   wait_for_boot 2
 
-  msg_info "Selecting UFS filesystem"
-  send_key_to_vm down
-  send_key_to_vm ret
-  wait_for_boot 2
+  if [ "$FILESYSTEM_MODE" = "ufs" ]; then
+    msg_info "Selecting UFS filesystem"
+    send_key_to_vm down
+    send_key_to_vm ret
+    wait_for_boot 2
 
-  msg_info "Selecting target disk"
-  send_key_to_vm spc
-  send_key_to_vm ret
-  wait_for_boot 2
+    msg_info "Selecting target disk"
+    send_key_to_vm spc
+    send_key_to_vm ret
+    wait_for_boot 2
 
-  msg_info "Confirming destructive install"
-  send_key_to_vm left
-  send_key_to_vm ret
-  wait_for_boot 180
+    msg_info "Confirming destructive install"
+    send_key_to_vm left
+    send_key_to_vm ret
+    wait_for_boot 180
 
-  msg_info "Accepting recommended swap if shown"
-  send_key_to_vm ret
-  wait_for_boot 8
+    msg_info "Accepting recommended swap if shown"
+    send_key_to_vm ret
+    wait_for_boot 8
+  else
+    msg_info "Selecting ZFS filesystem"
+    send_key_to_vm ret
+    wait_for_boot 2
+
+    msg_info "Accepting default ZFS device type"
+    send_key_to_vm ret
+    wait_for_boot 2
+
+    msg_info "Selecting target disk"
+    send_key_to_vm spc
+    send_key_to_vm ret
+    wait_for_boot 2
+
+    msg_info "Confirming destructive install"
+    send_key_to_vm left
+    send_key_to_vm ret
+    wait_for_boot 180
+  fi
 
   msg_info "Setting root password"
   send_line_to_vm "${INSTALL_ROOT_PASSWORD}"
@@ -553,7 +582,7 @@ if [ -n "$WAN_BRG" ]; then
 fi
 
 DESCRIPTION=$(
-cat <<EOF
+cat <<EOF2
 <div align='center'>
 <a href='https://community-scripts.org' target='_blank' rel='noopener noreferrer'>
 <img src='https://raw.githubusercontent.com/michelroegl-brunner/ProxmoxVE/refs/heads/develop/misc/images/logo-81x112.png' alt='Logo' style='width:81px;height:112px;'/>
@@ -580,7 +609,7 @@ cat <<EOF
 <a href='https://github.com/community-scripts/ProxmoxVE/issues' target='_blank' rel='noopener noreferrer' style='text-decoration: none; color: #00617f;'>Issues</a>
 </span>
 </div>
-EOF
+EOF2
 )
 qm set $VMID -description "$DESCRIPTION" >/dev/null
 
