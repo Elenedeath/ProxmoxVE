@@ -449,10 +449,6 @@ function automate_installer() {
   fi
   wait_for_boot 2
 
-  msg_info "Choosing Quick/Easy install"
-  send_key_to_vm ret
-  wait_for_boot 2
-
   msg_info "Selecting UFS filesystem"
   send_key_to_vm down
   send_key_to_vm ret
