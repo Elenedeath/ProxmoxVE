@@ -509,7 +509,7 @@ function automate_installer() {
   msg_info "Detaching installation ISO"
   qm set $VMID -delete ide2 >/dev/null
   msg_ok "Installation ISO detached"
-  wait_for_boot 5
+  wait_for_boot 10
 
   msg_info "Starting VM on installed disk"
   qm start $VMID >/dev/null
