@@ -438,10 +438,10 @@ function automate_installer() {
     send_key_to_vm ret
   else
     msg_info "Selecting French (accent keys) keymap"
-    for _ in {1..26}; do
+    for _ in {1..27}; do
       send_key_to_vm down
     done
-    send_key_to_vm ret
+    send_key_to_vm up
     wait_for_boot 2
     send_key_to_vm ret
   fi
