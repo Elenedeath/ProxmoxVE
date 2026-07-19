@@ -510,6 +510,7 @@ function automate_installer() {
   msg_ok "Installation ISO detached"
 
   msg_info "Rebooting VM from installed disk"
+  qm reset $VMID >/dev/null
   wait_for_boot 85
 
   msg_info "Waking console before login"
