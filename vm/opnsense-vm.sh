@@ -424,7 +424,12 @@ function automate_installer() {
   msg_info "Waiting for installer menu"
   wait_for_boot 12
 
-  msg_info "Accepting default keymap"
+  msg_info "Selecting French (accent keys) keymap"
+  send_key_to_vm f
+  wait_for_boot 1
+  send_key_to_vm down
+  send_key_to_vm down
+  send_key_to_vm down
   send_key_to_vm ret
   wait_for_boot 2
 
@@ -432,7 +437,8 @@ function automate_installer() {
   send_key_to_vm ret
   wait_for_boot 2
 
-  msg_info "Selecting filesystem option"
+  msg_info "Selecting UFS filesystem"
+  send_key_to_vm down
   send_key_to_vm ret
   wait_for_boot 2
 
