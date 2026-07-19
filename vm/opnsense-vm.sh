@@ -484,6 +484,7 @@ function automate_installer() {
     send_key_to_vm down
     send_key_to_vm ret
     wait_for_boot 15
+    send_key_to_vm ret
   else
     msg_info "Selecting ZFS filesystem"
     send_key_to_vm ret
@@ -511,6 +512,7 @@ function automate_installer() {
   msg_info "Completing installation"
   send_key_to_vm ret
   wait_for_boot 15
+  send_key_to_vm ret
   fi
 
   msg_info "Rebooting VM from installed disk"
