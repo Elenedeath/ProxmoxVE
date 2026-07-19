@@ -472,7 +472,7 @@ function automate_installer() {
     send_key_to_vm down
     send_key_to_vm spc
     send_key_to_vm ret
-    wait_for_boot 275
+    wait_for_boot 280
   else
     msg_info "Selecting ZFS filesystem"
     send_key_to_vm ret
