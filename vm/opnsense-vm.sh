@@ -483,6 +483,7 @@ function configure_lan_ip_after_login() {
     send_line_to_vm "n"
     send_line_to_vm "n"
     send_line_to_vm "n"
+    send_line_to_vm "n"
   fi
   wait_for_boot 15
   msg_ok "LAN configuration sent"
