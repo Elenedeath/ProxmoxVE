@@ -622,33 +622,67 @@ insert = """        {
             textField: 'thermalstate',
             renderer: function(value) {
                 try {
-                    const data = JSON.parse(String(value || "").replaceAll("Â", ""));
-                    const lines = [];
+                    const data = JSON.parse(String(value || '').replaceAll('Â', ''));
 
-                    Object.entries(data).forEach(([chip, entries]) => {
-                        if (!entries || typeof entries !== 'object') return;
-                        const temps = [];
+                    const cpuBlock = Object.entries(data).find(([name]) =>
+                        name.startsWith('coretemp-isa-')
+                    );
+                    let cpuLine = 'CPU: N/A';
+                    let coresLine = 'Cores: N/A';
+                    let nvmeLine = 'NVME: N/A';
 
-                        Object.entries(entries).forEach(([label, metrics]) => {
-                            if (!metrics || typeof metrics !== 'object') return;
-                            const inputKey = Object.keys(metrics).find(
-                                k => /temp\\d+_input$/.test(k) || k.endsWith('_input')
+                    if (cpuBlock) {
+                        const [, cpu] = cpuBlock;
+
+                        const pkg = cpu['Package id 0'];
+                        if (pkg) {
+                            const pkgKey = Object.keys(pkg).find(k =>
+                                /temp\\d+_input$/.test(k)
                             );
-                            if (!inputKey) return;
-
-                            const raw = metrics[inputKey];
-                            const val = Number(raw);
-                            if (!Number.isFinite(val)) return;
-
-                            temps.push(`${label}: ${val.toFixed(1)}°C`);
-                        });
-
-                        if (temps.length) {
-                            lines.push(`${chip} - ${temps.join(' | ')}`);
+                            if (pkgKey && Number.isFinite(Number(pkg[pkgKey]))) {
+                                cpuLine = `CPU: ${Number(pkg[pkgKey]).toFixed(1)} °C`;
+                            }
                         }
-                    });
 
-                    return lines.length ? lines.join('<br>') : 'No thermal data';
+                        const coreTemps = Object.entries(cpu)
+                            .filter(([label]) => /^Core \\d+$/.test(label))
+                            .sort((a, b) => {
+                                const na = Number(a[0].match(/\\d+/)?.[0] || 0);
+                                const nb = Number(b[0].match(/\\d+/)?.[0] || 0);
+                                return na - nb;
+                            })
+                            .map(([, metrics]) => {
+                                const key = Object.keys(metrics).find(k =>
+                                    /temp\\d+_input$/.test(k)
+                                );
+                                const val = key ? Number(metrics[key]) : NaN;
+                                return Number.isFinite(val) ? val.toFixed(1) : null;
+                            })
+                            .filter(Boolean);
+
+                        if (coreTemps.length) {
+                            coresLine = `Cores: ${coreTemps.join('/')} °C`;
+                        }
+                    }
+
+                    const nvmeBlock = Object.entries(data).find(([name]) =>
+                        name.startsWith('nvme-pci-')
+                    );
+                    if (nvmeBlock) {
+                        const [, nvme] = nvmeBlock;
+                        const composite = nvme['Composite'];
+                        if (composite) {
+                            const nvmeKey = Object.keys(composite).find(k =>
+                                /temp\\d+_input$/.test(k)
+                            );
+                            const nv = nvmeKey ? Number(composite[nvmeKey]) : NaN;
+                            if (Number.isFinite(nv)) {
+                                nvmeLine = `NVME: ${Math.round(nv)} °C`;
+                            }
+                        }
+                    }
+
+                    return [cpuLine, coresLine, nvmeLine].join('<br>');
                 } catch (err) {
                     return 'Thermal data unavailable';
                 }
