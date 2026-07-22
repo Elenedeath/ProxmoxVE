@@ -595,10 +595,10 @@ add_webui_cpu_temps() {
       msg_ok "Nodes.pm already patched"
     fi
 
-if ! grep -q "itemId: 'thermal'" "$PVE_JS"; then
-  msg_info "Patching pvemanagerlib.js"
+    if ! grep -q "itemId: 'thermal'" "$PVE_JS"; then
+      msg_info "Patching pvemanagerlib.js"
 
-  python3 - <<'PY'
+      python3 - <<'PY'
 from pathlib import Path
 import sys
 
@@ -697,14 +697,14 @@ if "itemId: 'thermal'" not in text:
     p.write_text(text)
 PY
 
-  grep -q "itemId: 'thermal'" "$PVE_JS" || {
-    msg_error "Failed to patch pvemanagerlib.js"
-    return 1
-  }
-  msg_ok "Patched pvemanagerlib.js"
-else
-  msg_ok "pvemanagerlib.js already patched"
-fi
+      grep -q "itemId: 'thermal'" "$PVE_JS" || {
+        msg_error "Failed to patch pvemanagerlib.js"
+        return 1
+      }
+      msg_ok "Patched pvemanagerlib.js"
+    else
+      msg_ok "pvemanagerlib.js already patched"
+    fi
 
     msg_info "Restarting pveproxy"
     if ! systemctl restart pveproxy; then
