@@ -631,6 +631,8 @@ insert = """        {
                     let nvmeLine = 'NVME: N/A';
 
                     if (cpuBlock) {
+                        const [, cpu] = cpuBlock;
+
                         const coreTemps = Object.entries(cpu)
                             .filter(([label]) => /^Core \\d+$/.test(label))
                             .sort((a, b) => {
