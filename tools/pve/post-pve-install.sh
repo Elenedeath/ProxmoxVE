@@ -595,26 +595,82 @@ add_webui_cpu_temps() {
       msg_ok "Nodes.pm already patched"
     fi
 
-    if ! grep -q "textField: 'thermalstate'" "$PVE_JS"; then
-      msg_info "Patching pvemanagerlib.js"
+if ! grep -q "itemId: 'thermal'" "$PVE_JS"; then
+  msg_info "Patching pvemanagerlib.js"
 
-      sed -i "s/padding: '0 0 20 0',/padding: '0 0 10 0',/" "$PVE_JS"
+  python3 - <<'PY'
+from pathlib import Path
+import sys
 
-      grep -q "padding: '0 0 10 0'" "$PVE_JS" || {
-        msg_error "Failed to patch padding in pvemanagerlib.js"
-        return 1
-      }
+p = Path("/usr/share/pve-manager/js/pvemanagerlib.js")
+text = p.read_text()
 
-      perl -0pi -e 's/(\{\n\s*itemId: '\''version'\'',.*?\n\s*textField: '\''pveversion'\'',\n\s*value: '\'''\''.*?\n\s*\},)/$1\n        {\n            itemId: '\''thermal'\'',\n            colspan: 2,\n            printBar: false,\n            title: gettext('\''CPU Thermal State'\''),\n            textField: '\''thermalstate'\'',\n            renderer: function(value) {\n                try {\n                    const data = JSON.parse(String(value || \"\").replaceAll(\"Â\", \"\"));\n                    const lines = [];\n\n                    Object.entries(data).forEach(([chip, entries]) => {\n                        if (!entries || typeof entries !== '\''object'\'') return;\n                        const temps = [];\n\n                        Object.entries(entries).forEach(([label, metrics]) => {\n                            if (!metrics || typeof metrics !== '\''object'\'') return;\n                            const inputKey = Object.keys(metrics).find(k => /temp\\d+_input$/.test(k) || k.endsWith('\''_input'\''));\n                            if (!inputKey) return;\n\n                            const raw = metrics[inputKey];\n                            const val = Number(raw);\n                            if (!Number.isFinite(val)) return;\n\n                            temps.push(`${label}: ${val.toFixed(1)}°C`);\n                        });\n\n                        if (temps.length) {\n                            lines.push(`${chip} - ${temps.join('\'' | '\'')}`);\n                        }\n                    });\n\n                    return lines.length ? lines.join('\''<br>'\'') : '\''No thermal data'\'';\n                } catch (err) {\n                    return '\''Thermal data unavailable'\'';\n                }\n            }\n        },/s' "$PVE_JS"
+anchor = """        {
+            itemId: 'version',
+            colspan: 2,
+            printBar: false,
+            title: gettext('Manager Version'),
+            textField: 'pveversion',
+            value: '',
+        },"""
 
-      grep -q "itemId: 'thermal'" "$PVE_JS" || {
-        msg_error "Failed to patch pvemanagerlib.js"
-        return 1
-      }
-      msg_ok "Patched pvemanagerlib.js"
-    else
-      msg_ok "pvemanagerlib.js already patched"
-    fi
+insert = """        {
+            itemId: 'thermal',
+            colspan: 2,
+            printBar: false,
+            title: gettext('CPU Thermal State'),
+            textField: 'thermalstate',
+            renderer: function(value) {
+                try {
+                    const data = JSON.parse(String(value || "").replaceAll("Â", ""));
+                    const lines = [];
+
+                    Object.entries(data).forEach(([chip, entries]) => {
+                        if (!entries || typeof entries !== 'object') return;
+                        const temps = [];
+
+                        Object.entries(entries).forEach(([label, metrics]) => {
+                            if (!metrics || typeof metrics !== 'object') return;
+                            const inputKey = Object.keys(metrics).find(
+                                k => /temp\\d+_input$/.test(k) || k.endsWith('_input')
+                            );
+                            if (!inputKey) return;
+
+                            const raw = metrics[inputKey];
+                            const val = Number(raw);
+                            if (!Number.isFinite(val)) return;
+
+                            temps.push(`${label}: ${val.toFixed(1)}°C`);
+                        });
+
+                        if (temps.length) {
+                            lines.push(`${chip} - ${temps.join(' | ')}`);
+                        }
+                    });
+
+                    return lines.length ? lines.join('<br>') : 'No thermal data';
+                } catch (err) {
+                    return 'Thermal data unavailable';
+                }
+            }
+        },"""
+
+if "itemId: 'thermal'" not in text:
+    if anchor not in text:
+        print("ANCHOR_NOT_FOUND", file=sys.stderr)
+        sys.exit(1)
+    text = text.replace(anchor, anchor + "\n" + insert, 1)
+    p.write_text(text)
+PY
+
+  grep -q "itemId: 'thermal'" "$PVE_JS" || {
+    msg_error "Failed to patch pvemanagerlib.js"
+    return 1
+  }
+  msg_ok "Patched pvemanagerlib.js"
+else
+  msg_ok "pvemanagerlib.js already patched"
+fi
 
     msg_info "Restarting pveproxy"
     if ! systemctl restart pveproxy; then
