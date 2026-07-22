@@ -706,13 +706,7 @@ PY
       msg_ok "pvemanagerlib.js already patched"
     fi
 
-    msg_info "Restarting pveproxy"
-    if ! systemctl restart pveproxy; then
-      msg_error "pveproxy restart failed"
-      return 1
-    fi
-
-    msg_ok "Added CPU temperatures to WebUI (clear browser cache or use private mode)"
+    msg_ok "Added CPU temperatures to WebUI (please reboot or restart pveproxy to apply)"
     ;;
   no)
     msg_error "Selected no to Adding CPU temperatures to WebUI"
