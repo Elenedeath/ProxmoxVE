@@ -627,23 +627,10 @@ insert = """        {
                     const cpuBlock = Object.entries(data).find(([name]) =>
                         name.startsWith('coretemp-isa-')
                     );
-                    let cpuLine = 'CPU: N/A';
                     let coresLine = 'Cores: N/A';
                     let nvmeLine = 'NVME: N/A';
 
                     if (cpuBlock) {
-                        const [, cpu] = cpuBlock;
-
-                        const pkg = cpu['Package id 0'];
-                        if (pkg) {
-                            const pkgKey = Object.keys(pkg).find(k =>
-                                /temp\\d+_input$/.test(k)
-                            );
-                            if (pkgKey && Number.isFinite(Number(pkg[pkgKey]))) {
-                                cpuLine = `CPU: ${Number(pkg[pkgKey]).toFixed(1)} °C`;
-                            }
-                        }
-
                         const coreTemps = Object.entries(cpu)
                             .filter(([label]) => /^Core \\d+$/.test(label))
                             .sort((a, b) => {
@@ -682,7 +669,7 @@ insert = """        {
                         }
                     }
 
-                    return [cpuLine, coresLine, nvmeLine].join('<br>');
+                    return [coresLine, nvmeLine].join(' | ');
                 } catch (err) {
                     return 'Thermal data unavailable';
                 }
