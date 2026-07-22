@@ -551,6 +551,85 @@ EOF
   post_routines_common
 }
 
+add_webui_cpu_temps() {
+  CHOICE=$(whiptail --backtitle "Proxmox VE Helper Scripts" --title "CPU TEMPERATURE IN WEBUI" --menu "Add CPU core temperatures to the Proxmox WebUI summary page?\n\nThis installs lm-sensors, patches Nodes.pm and pvemanagerlib.js, then restarts pveproxy.\n\nThis modification may be overwritten by future Proxmox updates." 16 72 2 \
+    "yes" " " \
+    "no" " " 3>&2 2>&1 1>&3)
+
+  case $CHOICE in
+  yes)
+    msg_info "Installing lm-sensors"
+    apt-get update &>/dev/null || true
+    if ! apt-get install -y lm-sensors &>/dev/null; then
+      msg_error "lm-sensors installation failed"
+      return 1
+    fi
+    msg_ok "Installed lm-sensors"
+
+    local NODES_PM="/usr/share/perl5/PVE/API2/Nodes.pm"
+    local PVE_JS="/usr/share/pve-manager/js/pvemanagerlib.js"
+
+    [[ -f "$NODES_PM" ]] || {
+      msg_error "Missing $NODES_PM"
+      return 1
+    }
+
+    [[ -f "$PVE_JS" ]] || {
+      msg_error "Missing $PVE_JS"
+      return 1
+    }
+
+    [[ -f "${NODES_PM}.bak" ]] || cp -a "$NODES_PM" "${NODES_PM}.bak"
+    [[ -f "${PVE_JS}.bak" ]] || cp -a "$PVE_JS" "${PVE_JS}.bak"
+
+    if ! grep -q 'thermalstate' "$NODES_PM"; then
+      msg_info "Patching Nodes.pm"
+      perl -0pi -e "s/\n(\s*my \\\$dinfo = df\\('\\/', 1\\); # output is bytes)/\n        \\\$res->{thermalstate} = \`sensors -j\`;\n\$1/s" "$NODES_PM"
+
+      grep -q 'thermalstate' "$NODES_PM" || {
+        msg_error "Failed to patch Nodes.pm"
+        return 1
+      }
+      msg_ok "Patched Nodes.pm"
+    else
+      msg_ok "Nodes.pm already patched"
+    fi
+
+    if ! grep -q "textField: 'thermalstate'" "$PVE_JS"; then
+      msg_info "Patching pvemanagerlib.js"
+
+      sed -i "s/padding: '0 0 20 0',/padding: '0 0 10 0',/" "$PVE_JS"
+
+      grep -q "padding: '0 0 10 0'" "$PVE_JS" || {
+        msg_error "Failed to patch padding in pvemanagerlib.js"
+        return 1
+      }
+
+      perl -0pi -e 's/(\{\n\s*itemId: '\''version'\'',.*?\n\s*textField: '\''pveversion'\'',\n\s*value: '\'''\''.*?\n\s*\},)/$1\n        {\n            itemId: '\''thermal'\'',\n            colspan: 2,\n            printBar: false,\n            title: gettext('\''CPU Thermal State'\''),\n            textField: '\''thermalstate'\'',\n            renderer: function(value) {\n                try {\n                    const data = JSON.parse(String(value || \"\").replaceAll(\"Â\", \"\"));\n                    const lines = [];\n\n                    Object.entries(data).forEach(([chip, entries]) => {\n                        if (!entries || typeof entries !== '\''object'\'') return;\n                        const temps = [];\n\n                        Object.entries(entries).forEach(([label, metrics]) => {\n                            if (!metrics || typeof metrics !== '\''object'\'') return;\n                            const inputKey = Object.keys(metrics).find(k => /temp\\d+_input$/.test(k) || k.endsWith('\''_input'\''));\n                            if (!inputKey) return;\n\n                            const raw = metrics[inputKey];\n                            const val = Number(raw);\n                            if (!Number.isFinite(val)) return;\n\n                            temps.push(`${label}: ${val.toFixed(1)}°C`);\n                        });\n\n                        if (temps.length) {\n                            lines.push(`${chip} - ${temps.join('\'' | '\'')}`);\n                        }\n                    });\n\n                    return lines.length ? lines.join('\''<br>'\'') : '\''No thermal data'\'';\n                } catch (err) {\n                    return '\''Thermal data unavailable'\'';\n                }\n            }\n        },/s' "$PVE_JS"
+
+      grep -q "itemId: 'thermal'" "$PVE_JS" || {
+        msg_error "Failed to patch pvemanagerlib.js"
+        return 1
+      }
+      msg_ok "Patched pvemanagerlib.js"
+    else
+      msg_ok "pvemanagerlib.js already patched"
+    fi
+
+    msg_info "Restarting pveproxy"
+    if ! systemctl restart pveproxy; then
+      msg_error "pveproxy restart failed"
+      return 1
+    fi
+
+    msg_ok "Added CPU temperatures to WebUI (clear browser cache or use private mode)"
+    ;;
+  no)
+    msg_error "Selected no to Adding CPU temperatures to WebUI"
+    ;;
+  esac
+}
+
 post_routines_common() {
   CHOICE=$(whiptail --backtitle "Proxmox VE Helper Scripts" --title "SUBSCRIPTION NAG" --menu "This will disable the nag message reminding you to purchase a subscription every time you log in to the web interface.\n \nDisable subscription nag?" 14 58 2 \
     "yes" " " \
@@ -665,6 +744,8 @@ EOF
     no) msg_error "Selected no to Disabling high availability" ;;
     esac
   fi
+
+  add_webui_cpu_temps
 
   CHOICE=$(whiptail --backtitle "Proxmox VE Helper Scripts" --title "UPDATE" --menu "\nUpdate Proxmox VE now?" 11 58 2 \
     "yes" " " \
