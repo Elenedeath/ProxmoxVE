@@ -3,7 +3,7 @@
 # Copyright (c) 2021-2026 tteck
 # Author: tteckster | MickLesk (CanbiZ)
 # License: MIT
-# https://github.com/community-scripts/ProxmoxVE/raw/main/LICENSE
+# [https://github.com/elenedeath/ProxmoxVE/raw/main/LICENSE](https://github.com/elenedeath/ProxmoxVE/raw/main/LICENSE)
 
 header_info() {
   clear
@@ -11,7 +11,7 @@ header_info() {
     ____ _    ________   ____             __     ____           __        ____
    / __ \ |  / / ____/  / __ \____  _____/ /_   /  _/___  _____/ /_____ _/ / /
   / /_/ / | / / __/    / /_/ / __ \/ ___/ __/   / // __ \/ ___/ __/ __ `/ / /
- / ____/| |/ / /___   / ____/ /_/ (__  ) /_   _/ // / / (__  ) /_/ /_/ / / /
+ / ____/| |/ / /___   / ____/ /_/ (__  ) /_   _/ // / / (__ ) /_/ /_/ / / /
 /_/     |___/_____/  /_/    \____/____/\__/  /___/_/ /_/____/\__/\__,_/_/_/
 
 EOF
@@ -45,7 +45,7 @@ msg_error() {
 }
 
 # Telemetry
-source <(curl -fsSL https://raw.githubusercontent.com/community-scripts/ProxmoxVE/main/misc/api.func) 2>/dev/null || true
+source <(curl -fsSL https://raw.githubusercontent.com/elenedeath/ProxmoxVE/main/misc/api.func) 2>/dev/null || true
 declare -f init_tool_telemetry &>/dev/null && init_tool_telemetry "post-pve-install" "pve"
 
 get_pve_version() {
@@ -552,7 +552,7 @@ EOF
 }
 
 add_webui_cpu_temps() {
-  CHOICE=$(whiptail --backtitle "Proxmox VE Helper Scripts" --title "CPU TEMPERATURE IN WEBUI" --menu "Add CPU core temperatures to the Proxmox WebUI summary page?\n\nThis installs lm-sensors, patches Nodes.pm and pvemanagerlib.js, then restarts pveproxy.\n\nThis modification may be overwritten by future Proxmox updates." 16 72 2 \
+  CHOICE=$(whiptail --backtitle "Proxmox VE Helper Scripts" --title "CPU TEMPERATURE IN WEBUI" --menu "Add CPU core temperatures to the Proxmox WebUI summary page?\n\nThis installs lm-sensors, patches Nodes.pm and pvemanagerlib.js.\n\nThe change will be applied at the end by restarting pveproxy or rebooting the node.\n\nThis modification may be overwritten by future Proxmox updates." 17 72 2 \
     "yes" " " \
     "no" " " 3>&2 2>&1 1>&3)
 
@@ -584,8 +584,39 @@ add_webui_cpu_temps() {
 
     if ! grep -q 'thermalstate' "$NODES_PM"; then
       msg_info "Patching Nodes.pm"
-      perl -0pi -e "s/\n(\s*my \\\$dinfo = df\\('\\/', 1\\); # output is bytes)/\n        \\\$res->{thermalstate} = \`sensors -j\`;\n\$1/s" "$NODES_PM"
+      python3 - "$NODES_PM" <<'PY'
+from pathlib import Path
+import sys
 
+p = Path(sys.argv[1])
+text = p.read_text()
+
+anchor = "my $dinfo = df('/', 1); # output is bytes\n\n$res->{rootfs} = {"
+insert = """my $thermalstate = '';
+if (-x '/usr/bin/sensors') {
+    $thermalstate = `/usr/bin/sensors -j 2>/dev/null`;
+    chomp $thermalstate;
+}
+$res->{thermalstate} = $thermalstate;
+
+"""
+
+if anchor not in text:
+    print("ANCHOR_NOT_FOUND", file=sys.stderr)
+    sys.exit(1)
+
+text = text.replace(
+    anchor,
+    "my $dinfo = df('/', 1); # output is bytes\n\n" + insert + "$res->{rootfs} = {",
+    1,
+)
+p.write_text(text)
+PY
+
+      perl -c "$NODES_PM" || {
+        msg_error "Nodes.pm syntax check failed"
+        return 1
+      }
       grep -q 'thermalstate' "$NODES_PM" || {
         msg_error "Failed to patch Nodes.pm"
         return 1
@@ -598,23 +629,34 @@ add_webui_cpu_temps() {
     if ! grep -q "itemId: 'thermal'" "$PVE_JS"; then
       msg_info "Patching pvemanagerlib.js"
 
-      python3 - <<'PY'
+      python3 - "$PVE_JS" <<'PY'
 from pathlib import Path
+import re
 import sys
 
-p = Path("/usr/share/pve-manager/js/pvemanagerlib.js")
+p = Path(sys.argv[1])
 text = p.read_text()
 
-anchor = """        {
-            itemId: 'version',
-            colspan: 2,
-            printBar: false,
-            title: gettext('Manager Version'),
-            textField: 'pveversion',
-            value: '',
-        },"""
+patterns = [
+    r"(?P<item>\{\s*itemId:\s*['\"]version['\"].*?textField:\s*['\"]pveversion['\"].*?\n\s*\},)",
+    r"(?P<item>\{(?:(?!\n\s*\},).)*?textField:\s*['\"]pveversion['\"].*?\n\s*\},)",
+]
+											  
+									
+					  
+			 
 
-insert = """        {
+match = None
+for pattern in patterns:
+    match = re.search(pattern, text, re.S)
+    if match:
+        break
+
+if not match:
+    print("PVEVERSION_ANCHOR_NOT_FOUND", file=sys.stderr)
+    sys.exit(1)
+
+insert = r'''        {
             itemId: 'thermal',
             colspan: 2,
             printBar: false,
@@ -634,15 +676,15 @@ insert = """        {
                         const [, cpu] = cpuBlock;
 
                         const coreTemps = Object.entries(cpu)
-                            .filter(([label]) => /^Core \\d+$/.test(label))
+                            .filter(([label]) => /^Core \d+$/.test(label))
                             .sort((a, b) => {
-                                const na = Number(a[0].match(/\\d+/)?.[0] || 0);
-                                const nb = Number(b[0].match(/\\d+/)?.[0] || 0);
+                                const na = Number(a[0].match(/\d+/)?.[0] || 0);
+                                const nb = Number(b[0].match(/\d+/)?.[0] || 0);
                                 return na - nb;
                             })
                             .map(([, metrics]) => {
                                 const key = Object.keys(metrics).find(k =>
-                                    /temp\\d+_input$/.test(k)
+                                    /temp\d+_input$/.test(k)
                                 );
                                 const val = key ? Number(metrics[key]) : NaN;
                                 return Number.isFinite(val) ? val.toFixed(1) : null;
@@ -662,7 +704,7 @@ insert = """        {
                         const composite = nvme['Composite'];
                         if (composite) {
                             const nvmeKey = Object.keys(composite).find(k =>
-                                /temp\\d+_input$/.test(k)
+                                /temp\d+_input$/.test(k)
                             );
                             const nv = nvmeKey ? Number(composite[nvmeKey]) : NaN;
                             if (Number.isFinite(nv)) {
@@ -675,15 +717,15 @@ insert = """        {
                 } catch (err) {
                     return 'Thermal data unavailable';
                 }
-            }
-        },"""
+            },
+        },'''
 
-if "itemId: 'thermal'" not in text:
-    if anchor not in text:
-        print("ANCHOR_NOT_FOUND", file=sys.stderr)
-        sys.exit(1)
-    text = text.replace(anchor, anchor + "\n" + insert, 1)
-    p.write_text(text)
+text = text[:match.end()] + "\n" + insert + text[match.end():]
+						  
+												  
+				   
+														  
+p.write_text(text)
 PY
 
       grep -q "itemId: 'thermal'" "$PVE_JS" || {
@@ -695,7 +737,7 @@ PY
       msg_ok "pvemanagerlib.js already patched"
     fi
 
-    msg_ok "Added CPU temperatures to WebUI (please reboot or restart pveproxy to apply)"
+    msg_ok "Added CPU temperatures to WebUI (restart pveproxy or reboot to apply)"
     ;;
   no)
     msg_error "Selected no to Adding CPU temperatures to WebUI"
@@ -818,7 +860,7 @@ EOF
     esac
   fi
 
-  add_webui_cpu_temps
+					 
 
   CHOICE=$(whiptail --backtitle "Proxmox VE Helper Scripts" --title "UPDATE" --menu "\nUpdate Proxmox VE now?" 11 58 2 \
     "yes" " " \
@@ -833,6 +875,8 @@ EOF
   no) msg_error "Selected no to Updating Proxmox VE" ;;
   esac
 
+  add_webui_cpu_temps
+
   # Final message for all hosts in cluster and browser cache
   whiptail --backtitle "Proxmox VE Helper Scripts" --title "Post-Install Reminder" --msgbox \
     "IMPORTANT:
@@ -844,18 +888,28 @@ After completing these steps, it is strongly recommended to REBOOT your node.
 After the upgrade or post-install routines, always clear your browser cache or perform a hard reload (Ctrl+Shift+R) before using the Proxmox VE Web UI to avoid UI display issues.
 " 20 80
 
-  CHOICE=$(whiptail --backtitle "Proxmox VE Helper Scripts" --title "REBOOT" --menu "\nReboot Proxmox VE now? (recommended)" 11 58 2 \
-    "yes" " " \
-    "no" " " 3>&2 2>&1 1>&3)
+  CHOICE=$(whiptail --backtitle "Proxmox VE Helper Scripts" --title "APPLY WEBUI CHANGES" --menu "\nApply pending Proxmox WebUI changes now?" 13 64 3 \
+    "restart-pveproxy" "Restart pveproxy only" \
+    "reboot" "Reboot Proxmox VE node (recommended)" \
+    "none" "Do nothing now" 3>&2 2>&1 1>&3)
   case $CHOICE in
-  yes)
+  restart-pveproxy)
+    msg_info "Restarting pveproxy"
+    if systemctl restart pveproxy; then
+      msg_ok "Restarted pveproxy"
+    else
+      msg_error "Failed to restart pveproxy"
+    fi
+    msg_ok "Completed Post Install Routines"
+    ;;
+  reboot)
     msg_info "Rebooting Proxmox VE"
     sleep 2
     msg_ok "Completed Post Install Routines"
     reboot
     ;;
-  no)
-    msg_error "Selected no to Rebooting Proxmox VE (Reboot recommended)"
+  none)
+    msg_error "Selected no action (restart pveproxy or reboot later)"
     msg_ok "Completed Post Install Routines"
     ;;
   esac
