@@ -591,13 +591,14 @@ import sys
 p = Path(sys.argv[1])
 text = p.read_text()
 
-anchor = "my $dinfo = df('/', 1); # output is bytes\n\n$res->{rootfs} = {"
-insert = """my $thermalstate = '';
-if (-x '/usr/bin/sensors') {
-    $thermalstate = `/usr/bin/sensors -j 2>/dev/null`;
-    chomp $thermalstate;
-}
-$res->{thermalstate} = $thermalstate;
+# L'ancre réelle dans Proxmox 9 inclut l'indentation de 8 espaces
+anchor = "        my $dinfo = df('/', 1); # output is bytes\n\n        $res->{rootfs} = {"
+insert = """        my $thermalstate = '';
+        if (-x '/usr/bin/sensors') {
+            $thermalstate = `/usr/bin/sensors -j 2>/dev/null`;
+            chomp $thermalstate;
+        }
+        $res->{thermalstate} = $thermalstate;
 
 """
 
@@ -605,11 +606,7 @@ if anchor not in text:
     print("ANCHOR_NOT_FOUND", file=sys.stderr)
     sys.exit(1)
 
-text = text.replace(
-    anchor,
-    "my $dinfo = df('/', 1); # output is bytes\n\n" + insert + "$res->{rootfs} = {",
-    1,
-)
+text = text.replace(anchor, "        my $dinfo = df('/', 1); # output is bytes\n\n" + insert + "        $res->{rootfs} = {", 1)
 p.write_text(text)
 PY
 
