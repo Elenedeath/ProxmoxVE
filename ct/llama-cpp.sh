@@ -1,6 +1,5 @@
 #!/usr/bin/env bash
-_cs_boot="${COMMUNITY_SCRIPTS_CORE_DIR:-$(dirname "${BASH_SOURCE[0]}")/../../core}/core/build.func"
-source "$_cs_boot" 2>/dev/null || source <(curl -fsSL "${COMMUNITY_SCRIPTS_CORE_URL:-https://raw.githubusercontent.com/elenedeath/core/main}/core/build.func")
+source <(curl -fsSL https://raw.githubusercontent.com/elenedeath/ProxmoxVE/main/misc/build.func)
 # Copyright (c) 2021-2026 community-scripts ORG
 # Author: MickLesk (CanbiZ)
 # License: MIT | https://github.com/elenedeath/ProxmoxVED/raw/main/LICENSE
