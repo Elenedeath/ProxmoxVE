@@ -16,7 +16,6 @@ var_gpu="${var_gpu:-yes}"
 #var_arm64="${var_arm64:-no}" # unset = ask the user; set yes/no only when verified
 var_unprivileged="${var_unprivileged:-1}"
 var_testurl="${var_testurl:-https://github.com/elenedeath/ProxmoxVED/issues/2124}"
-var_ignore_disable="${var_ignore_disable:-yes}"
 
 header_info "$APP"
 variables
