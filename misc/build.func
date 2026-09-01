@@ -5743,7 +5743,7 @@ create_lxc_container() {
       pveam update >/dev/null 2>&1 || true
     fi
     mapfile -t _online_vers < <(
-      pveam available -section system 2>/dev/null |
+      pveam available 2>/dev/null |
         awk '{print $2}' |
         grep -E "^${os_type}-[0-9]" |
         { [[ -n "$tpl_pattern" ]] && grep "$tpl_pattern" || cat; } |
@@ -5783,7 +5783,7 @@ create_lxc_container() {
     else
       # Check online
       mapfile -t _fb_online < <(
-        pveam available -section system 2>/dev/null |
+        pveam available 2>/dev/null |
           awk '{print $2}' |
           grep -E "^${fallback_search}.*${tpl_pattern}" |
           sort -t - -k 2 -V 2>/dev/null || true
@@ -5866,7 +5866,7 @@ create_lxc_container() {
         pveam update >/dev/null 2>&1 || true
       fi
       mapfile -t _online_vers < <(
-        pveam available -section system 2>/dev/null |
+        pveam available 2>/dev/null |
           awk '{print $2}' |
           grep -E "^${os_type}-[0-9]" |
           { [[ -n "$tpl_pattern" ]] && grep "$tpl_pattern" || cat; } |
@@ -6322,7 +6322,7 @@ create_lxc_container() {
       fi
 
       ONLINE_TEMPLATES=()
-      mapfile -t ONLINE_TEMPLATES < <(pveam available -section system 2>/dev/null | grep -E '\.(tar\.zst|tar\.xz|tar\.gz)$' | awk '{print $2}' | grep -E "^${TEMPLATE_SEARCH}.*${TEMPLATE_PATTERN}" | sort -t - -k 2 -V 2>/dev/null || true)
+      mapfile -t ONLINE_TEMPLATES < <(pveam available 2>/dev/null | grep -E '\.(tar\.zst|tar\.xz|tar\.gz)$' | awk '{print $2}' | grep -E "^${TEMPLATE_SEARCH}.*${TEMPLATE_PATTERN}" | sort -t - -k 2 -V 2>/dev/null || true)
       [[ ${#ONLINE_TEMPLATES[@]} -gt 0 ]] && ONLINE_TEMPLATE="${ONLINE_TEMPLATES[-1]}"
 
       TEMPLATE="$ONLINE_TEMPLATE"
@@ -6337,7 +6337,7 @@ create_lxc_container() {
       # Get all available versions for this OS type
       AVAILABLE_VERSIONS=()
       mapfile -t AVAILABLE_VERSIONS < <(
-        pveam available -section system 2>/dev/null |
+        pveam available 2>/dev/null |
           grep -E '\.(tar\.zst|tar\.xz|tar\.gz)$' |
           awk -F'\t' '{print $1}' |
           grep "${PCT_OSTYPE}-" |
@@ -6360,7 +6360,7 @@ create_lxc_container() {
 
           ONLINE_TEMPLATES=()
           mapfile -t ONLINE_TEMPLATES < <(
-            pveam available -section system 2>/dev/null |
+            pveam available 2>/dev/null |
               grep -E '\.(tar\.zst|tar\.xz|tar\.gz)$' |
               awk '{print $2}' |
               grep -E "^${TEMPLATE_SEARCH}-.*${TEMPLATE_PATTERN}" |
@@ -6401,7 +6401,7 @@ create_lxc_container() {
 
         # Get available versions
         mapfile -t AVAILABLE_VERSIONS < <(
-          pveam available -section system 2>/dev/null |
+          pveam available 2>/dev/null |
             grep "^${PCT_OSTYPE}-" |
             sed -E 's/.*'"${PCT_OSTYPE}"'-([0-9]+\.[0-9]+).*/\1/' |
             grep -E '^[0-9]+\.[0-9]+$' |
@@ -6431,7 +6431,7 @@ create_lxc_container() {
                 sed 's|.*/||' | sort -t - -k 2 -V
             )
             mapfile -t ONLINE_TEMPLATES < <(
-              pveam available -section system 2>/dev/null |
+              pveam available 2>/dev/null |
                 grep -E '\.(tar\.zst|tar\.xz|tar\.gz)$' |
                 awk '{print $2}' |
                 grep -E "^${TEMPLATE_SEARCH}-.*${TEMPLATE_PATTERN}" |
@@ -6478,7 +6478,7 @@ create_lxc_container() {
     if [[ -z "$TEMPLATE" ]]; then
       msg_error "No template found for ${PCT_OSTYPE} ${PCT_OSVERSION}"
       msg_custom "ℹ️" "${YW}" "Please check:"
-      msg_custom "  •" "${YW}" "Is pveam catalog available? (run: pveam available -section system)"
+      msg_custom "  •" "${YW}" "Is pveam catalog available? (run: pveam available)"
       msg_custom "  •" "${YW}" "Does the template exist for your OS version?"
       exit 225
     fi
