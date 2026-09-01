@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 _cs_boot="${COMMUNITY_SCRIPTS_CORE_DIR:-$(dirname "${BASH_SOURCE[0]}")/../../core}/core/build.func"
-source "$_cs_boot" 2>/dev/null || source <(curl -fsSL "${COMMUNITY_SCRIPTS_CORE_URL:-https://raw.githubusercontent.com/community-scripts/core/main}/core/build.func")
-# Copyright (c) 2021-2026 community-scripts ORG
+source "$_cs_boot" 2>/dev/null || source <(curl -fsSL "${COMMUNITY_SCRIPTS_CORE_URL:-https://raw.githubusercontent.com/elenedeath/core/main}/core/build.func")
+# Copyright (c) 2021-2026 elenedeath ORG
 # Author: MickLesk (CanbiZ)
-# License: MIT | https://github.com/community-scripts/ProxmoxVED/raw/main/LICENSE
+# License: MIT | https://github.com/elenedeath/ProxmoxVED/raw/main/LICENSE
 # Source: https://github.com/ggml-org/llama.cpp
 
 APP="llama-cpp"
@@ -16,7 +16,7 @@ var_version="${var_version:-13}"
 var_gpu="${var_gpu:-yes}"
 #var_arm64="${var_arm64:-no}" # unset = ask the user; set yes/no only when verified
 var_unprivileged="${var_unprivileged:-1}"
-var_testurl="${var_testurl:-https://github.com/community-scripts/ProxmoxVED/issues/2124}"
+var_testurl="${var_testurl:-https://github.com/elenedeath/ProxmoxVED/issues/2124}"
 
 header_info "$APP"
 variables
