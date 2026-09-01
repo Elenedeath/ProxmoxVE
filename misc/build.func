@@ -6322,7 +6322,7 @@ create_lxc_container() {
       fi
 
       ONLINE_TEMPLATES=()
-      mapfile -t ONLINE_TEMPLATES < <(pveam available 2>/dev/null | grep -E '\.(tar\.zst|tar\.xz|tar\.gz)$' | awk '{print $2}' | grep -E "^${TEMPLATE_SEARCH}.*${TEMPLATE_PATTERN}" | sort -t - -k 2 -V 2>/dev/null || true)
+      mapfile -t ONLINE_TEMPLATES < <(pveam available 2>/dev/null | grep '\.tar\.' | awk '{print $2}' | grep -E "^${TEMPLATE_SEARCH}.*${TEMPLATE_PATTERN}" | sort -t - -k 2 -V 2>/dev/null || true)
       [[ ${#ONLINE_TEMPLATES[@]} -gt 0 ]] && ONLINE_TEMPLATE="${ONLINE_TEMPLATES[-1]}"
 
       TEMPLATE="$ONLINE_TEMPLATE"
@@ -6338,7 +6338,7 @@ create_lxc_container() {
       AVAILABLE_VERSIONS=()
       mapfile -t AVAILABLE_VERSIONS < <(
         pveam available 2>/dev/null |
-          grep -E '\.(tar\.zst|tar\.xz|tar\.gz)$' |
+          grep '\.tar\.' |
           awk -F'\t' '{print $1}' |
           grep "${PCT_OSTYPE}-" |
           sed -E "s/.*${PCT_OSTYPE}-([0-9]+(\.[0-9]+)?).*/\1/" |
@@ -6361,7 +6361,7 @@ create_lxc_container() {
           ONLINE_TEMPLATES=()
           mapfile -t ONLINE_TEMPLATES < <(
             pveam available 2>/dev/null |
-              grep -E '\.(tar\.zst|tar\.xz|tar\.gz)$' |
+              grep '\.tar\.' |
               awk '{print $2}' |
               grep -E "^${TEMPLATE_SEARCH}-.*${TEMPLATE_PATTERN}" |
               sort -t - -k 2 -V 2>/dev/null || true
@@ -6432,7 +6432,7 @@ create_lxc_container() {
             )
             mapfile -t ONLINE_TEMPLATES < <(
               pveam available 2>/dev/null |
-                grep -E '\.(tar\.zst|tar\.xz|tar\.gz)$' |
+                grep '\.tar\.' |
                 awk '{print $2}' |
                 grep -E "^${TEMPLATE_SEARCH}-.*${TEMPLATE_PATTERN}" |
                 sort -t - -k 2 -V 2>/dev/null || true
