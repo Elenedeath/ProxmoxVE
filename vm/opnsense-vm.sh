@@ -1,26 +1,27 @@
 #!/usr/bin/env bash
+# Copyright (c) 2021-2026 community-scripts ORG
+# Author: michelroegl-brunner | MickLesk (CanbiZ)
+# License: MIT | https://github.com/community-scripts/ProxmoxVE/raw/main/LICENSE
+#
+# Fork Elenedeath: upstream structure (community-scripts/core vm-core.func) with
+# the official OPNsense DVD ISO + automated installer instead of the FreeBSD
+# image bootstrap. Fork additions: installer keymap (default / French accent
+# keys), UFS/ZFS choice, LAN DHCP/static with optional LAN DHCP server, local
+# ISO cache reuse.
 
-source /dev/stdin <<<$(curl -fsSL https://raw.githubusercontent.com/community-scripts/ProxmoxVE/main/misc/api.func)
+COMMUNITY_SCRIPTS_URL="${COMMUNITY_SCRIPTS_URL:-https://raw.githubusercontent.com/Elenedeath/ProxmoxVE/main}"
+source <(curl -fsSL "${COMMUNITY_SCRIPTS_CORE_URL:-https://raw.githubusercontent.com/community-scripts/core/main}/pve/vm-core.func")
+load_functions
 
-function header_info {
-  clear
-  cat <<"EOT"
-   ____  ____  _   __
-  / __ \/ __ \/ | / /_______  ____  ________
- / / / / /_/ /  |/ / ___/ _ \/ __ \/ ___/ _ \\
-/ /_/ / ____/ /|  (__  )  __/ / / (__  )  __/
-\____/_/   /_/ |_/____/\___/_/ /_/____/\___/
-EOT
-}
-
-header_info
-echo -e "Loading..."
-
+#API VARIABLES
 RANDOM_UUID="$(cat /proc/sys/kernel/random/uuid)"
 METHOD=""
+APP="OPNsense"
+APP_TYPE="vm"
 NSAPP="opnsense-vm"
 var_os="opnsense"
 var_version="26.7"
+#
 ISO_TYPE="dvd"
 ISO_ARCH="amd64"
 ISO_FILENAME="OPNsense-${var_version}-${ISO_TYPE}-${ISO_ARCH}.iso.bz2"
@@ -30,80 +31,32 @@ FORCE_ISO_DOWNLOAD="no"
 KEYMAP_MODE="default"
 FILESYSTEM_MODE="ufs"
 LAN_IP_MODE="dhcp"
-LAN_STATIC_IP="192.168.1.2"
-LAN_STATIC_MASK="24"
-LAN_STATIC_GW="192.168.1.1"
+LAN_STATIC_IP_DEFAULT="192.168.1.2"
+LAN_STATIC_MASK_DEFAULT="24"
+LAN_STATIC_GW_DEFAULT="192.168.1.1"
 ENABLE_LAN_DHCP_SERVER="n"
 LAN_DHCP_RANGE_START=""
 LAN_DHCP_RANGE_END=""
+# OVMF without pre-enrolled Secure Boot keys, the OPNsense ISO is not signed
+EFI_OPTS=",efitype=4m,pre-enrolled-keys=0"
 
 GEN_MAC=02:$(openssl rand -hex 5 | awk '{print toupper($0)}' | sed 's/\(..\)/\1:/g; s/.$//')
 GEN_MAC_LAN=02:$(openssl rand -hex 5 | awk '{print toupper($0)}' | sed 's/\(..\)/\1:/g; s/.$//')
 
-YW=$(echo "\033[33m")
-BL=$(echo "\033[36m")
-RD=$(echo "\033[01;31m")
-BGN=$(echo "\033[4;92m")
-GN=$(echo "\033[1;92m")
-DGN=$(echo "\033[32m")
-CL=$(echo "\033[m")
-BFR="\r\033[K"
-HOLD="-"
-CM="${GN}✓${CL}"
-CROSS="${RD}✗${CL}"
+HA=$(echo "\033[1;34m")
+THIN="discard=on,ssd=1,"
+
+header_info
+echo -e "Loading..."
 set -Eeo pipefail
+shopt -s inherit_errexit
 trap 'error_handler $LINENO "$BASH_COMMAND"' ERR
 trap cleanup EXIT
 trap 'post_update_to_api "failed" "130"' SIGINT
 trap 'post_update_to_api "failed" "143"' SIGTERM
 trap 'post_update_to_api "failed" "129"; exit 129' SIGHUP
 
-function error_handler() {
-  local exit_code="$?"
-  local line_number="$1"
-  local command="$2"
-  post_update_to_api "failed" "$exit_code"
-  local error_message="${RD}[ERROR]${CL} in line ${RD}$line_number${CL}: exit code ${RD}$exit_code${CL}: while executing command ${YW}$command${CL}"
-  echo -e "\n$error_message\n"
-  cleanup_vmid
-}
-
-function get_valid_nextid() {
-  local try_id
-  try_id=$(pvesh get /cluster/nextid)
-  while true; do
-    if [ -f "/etc/pve/qemu-server/${try_id}.conf" ] || [ -f "/etc/pve/lxc/${try_id}.conf" ]; then
-      try_id=$((try_id + 1))
-      continue
-    fi
-    if lvs --noheadings -o lv_name 2>/dev/null | grep -qE "(^|[-_])${try_id}($|[-_])"; then
-      try_id=$((try_id + 1))
-      continue
-    fi
-    break
-  done
-  echo "$try_id"
-}
-
-function cleanup_vmid() {
-  if [[ -n "${VMID:-}" ]] && qm status $VMID &>/dev/null; then
-    qm stop $VMID &>/dev/null || true
-    qm destroy $VMID &>/dev/null || true
-  fi
-}
-
-function cleanup() {
-  local exit_code=$?
-  popd >/dev/null || true
-  if [[ "${POST_TO_API_DONE:-}" == "true" && "${POST_UPDATE_DONE:-}" != "true" ]]; then
-    if [[ $exit_code -eq 0 ]]; then
-      post_update_to_api "done" "none"
-    else
-      post_update_to_api "failed" "$exit_code"
-    fi
-  fi
-  rm -rf "$TEMP_DIR"
-}
+vm_require_arch amd64
 
 function check_disk_space() {
   local path="$1"
@@ -114,113 +67,102 @@ function check_disk_space() {
   [ "$available_gb" -ge "$required_gb" ]
 }
 
-if [ -d "/var/tmp" ] && check_disk_space "/var/tmp" 4; then
-  TEMP_DIR=$(mktemp -d /var/tmp/opnsense-vm.XXXXXX)
-elif [ -d "/tmp" ] && check_disk_space "/tmp" 4; then
-  TEMP_DIR=$(mktemp -d)
-else
+# The compressed ISO and the decompressed one live here at the same time (~4 GB)
+TEMP_DIR=$(mktemp -d)
+if ! check_disk_space "$TEMP_DIR" 4 && [ -d "/var/tmp" ] && check_disk_space "/var/tmp" 4; then
+  rm -rf "$TEMP_DIR"
   TEMP_DIR=$(mktemp -d /var/tmp/opnsense-vm.XXXXXX)
 fi
 pushd "$TEMP_DIR" >/dev/null
 
-function msg_info() {
-  local msg="$1"
-  echo -ne " ${HOLD} ${YW}${msg}..."
-}
+vm_preflight
+vm_require_tools bzip2
 
-function msg_ok() {
-  local msg="$1"
-  echo -e "${BFR} ${CM} ${GN}${msg}${CL}"
-}
-
-function msg_error() {
-  local msg="$1"
-  echo -e "${BFR} ${CROSS} ${RD}${msg}${CL}"
-}
-
+# qm sendkey sends US key names. With the installer keymap set to French
+# (accent keys) the guest reads them as AZERTY, so digits need shift, "." is
+# shift-comma and ":" is the US "." key. Only what the script types (digits,
+# dots, lowercase words) is remapped.
 function send_line_to_vm() {
-  local input="$1"
-  echo -e "${DGN}Sending line: ${YW}$input${CL}"
-  for ((i = 0; i < ${#input}; i++)); do
-    character=${input:i:1}
+  echo -e "${DGN}Sending line: ${YW}$1${CL}"
+  for ((i = 0; i < ${#1}; i++)); do
+    character=${1:i:1}
     case $character in
-      " ") character="spc" ;;
-      "-") character="minus" ;;
-      "=") character="equal" ;;
-      ",") character="comma" ;;
-      ".")
-        if [ "$KEYMAP_MODE" = "french-accent" ]; then
-          character="shift-comma"
-        else
-          character="dot"
-        fi
-        ;;
-      "/") character="slash" ;;
-      "'") character="apostrophe" ;;
-      ";") character="semicolon" ;;
-      '\\') character="backslash" ;;
-      '`') character="grave_accent" ;;
-      "[") character="bracket_left" ;;
-      "]") character="bracket_right" ;;
-      "_") character="shift-minus" ;;
-      "+") character="shift-equal" ;;
-      "?") character="shift-slash" ;;
-      "<") character="shift-comma" ;;
-      ">") character="shift-dot" ;;
-      '"') character="shift-apostrophe" ;;
-      ":")
-        if [ "$KEYMAP_MODE" = "french-accent" ]; then
-          character="dot"
-        else
-          character="shift-semicolon"
-        fi
-        ;;
-      "|") character="shift-backslash" ;;
-      "~") character="shift-grave_accent" ;;
-      "{") character="shift-bracket_left" ;;
-      "}") character="shift-bracket_right" ;;
-      "A") character="shift-a" ;;
-      "B") character="shift-b" ;;
-      "C") character="shift-c" ;;
-      "D") character="shift-d" ;;
-      "E") character="shift-e" ;;
-      "F") character="shift-f" ;;
-      "G") character="shift-g" ;;
-      "H") character="shift-h" ;;
-      "I") character="shift-i" ;;
-      "J") character="shift-j" ;;
-      "K") character="shift-k" ;;
-      "L") character="shift-l" ;;
-      "M") character="shift-m" ;;
-      "N") character="shift-n" ;;
-      "O") character="shift-o" ;;
-      "P") character="shift-p" ;;
-      "Q") character="shift-q" ;;
-      "R") character="shift-r" ;;
-      "S") character="shift-s" ;;
-      "T") character="shift-t" ;;
-      "U") character="shift-u" ;;
-      "V") character="shift-v" ;;
-      "W") character="shift-w" ;;
-      "X") character="shift-x" ;;
-      "Y") character="shift-y" ;;
-      "Z") character="shift-z" ;;
-      "!") character="shift-1" ;;
-      "@") character="shift-2" ;;
-      "#") character="shift-3" ;;
-      '$') character="shift-4" ;;
-      "%") character="shift-5" ;;
-      "^") character="shift-6" ;;
-      "&") character="shift-7" ;;
-      "*") character="shift-8" ;;
-      "(") character="shift-9" ;;
-      ")") character="shift-0" ;;
-      [0-9])
-        if [ "$KEYMAP_MODE" = "french-accent" ]; then
-          character="shift-$character"
-        fi
-        ;;
-        
+    " ") character="spc" ;;
+    "-") character="minus" ;;
+    "=") character="equal" ;;
+    ",") character="comma" ;;
+    ".")
+      if [ "$KEYMAP_MODE" = "french-accent" ]; then
+        character="shift-comma"
+      else
+        character="dot"
+      fi
+      ;;
+    "/") character="slash" ;;
+    "'") character="apostrophe" ;;
+    ";") character="semicolon" ;;
+    '\') character="backslash" ;;
+    '`') character="grave_accent" ;;
+    "[") character="bracket_left" ;;
+    "]") character="bracket_right" ;;
+    "_") character="shift-minus" ;;
+    "+") character="shift-equal" ;;
+    "?") character="shift-slash" ;;
+    "<") character="shift-comma" ;;
+    ">") character="shift-dot" ;;
+    '"') character="shift-apostrophe" ;;
+    ":")
+      if [ "$KEYMAP_MODE" = "french-accent" ]; then
+        character="dot"
+      else
+        character="shift-semicolon"
+      fi
+      ;;
+    "|") character="shift-backslash" ;;
+    "~") character="shift-grave_accent" ;;
+    "{") character="shift-bracket_left" ;;
+    "}") character="shift-bracket_right" ;;
+    "A") character="shift-a" ;;
+    "B") character="shift-b" ;;
+    "C") character="shift-c" ;;
+    "D") character="shift-d" ;;
+    "E") character="shift-e" ;;
+    "F") character="shift-f" ;;
+    "G") character="shift-g" ;;
+    "H") character="shift-h" ;;
+    "I") character="shift-i" ;;
+    "J") character="shift-j" ;;
+    "K") character="shift-k" ;;
+    "L") character="shift-l" ;;
+    "M") character="shift-m" ;;
+    "N") character="shift-n" ;;
+    "O") character="shift-o" ;;
+    "P") character="shift-p" ;;
+    "Q") character="shift-q" ;;
+    "R") character="shift-r" ;;
+    "S") character="shift-s" ;;
+    "T") character="shift-t" ;;
+    "U") character="shift-u" ;;
+    "V") character="shift-v" ;;
+    "W") character="shift-w" ;;
+    "X") character="shift-x" ;;
+    "Y") character="shift-y" ;;
+    "Z") character="shift-z" ;;
+    "!") character="shift-1" ;;
+    "@") character="shift-2" ;;
+    "#") character="shift-3" ;;
+    '$') character="shift-4" ;;
+    "%") character="shift-5" ;;
+    "^") character="shift-6" ;;
+    "&") character="shift-7" ;;
+    "*") character="shift-8" ;;
+    "(") character="shift-9" ;;
+    ")") character="shift-0" ;;
+    [0-9])
+      if [ "$KEYMAP_MODE" = "french-accent" ]; then
+        character="shift-$character"
+      fi
+      ;;
     esac
     qm sendkey $VMID "$character" >/dev/null
     sleep 0.03
@@ -240,98 +182,249 @@ function wait_for_boot() {
   sleep "$seconds"
 }
 
-pve_check() {
-  local PVE_VER
-  PVE_VER="$(pveversion | awk -F'/' '{print $2}' | awk -F'-' '{print $1}')"
-  if [[ "$PVE_VER" =~ ^8\.([0-9]+) ]]; then
-    return 0
-  fi
-  if [[ "$PVE_VER" =~ ^9\.([0-9]+) ]]; then
-    local MINOR="${BASH_REMATCH[1]}"
-    if ((MINOR <= 2)); then
-      return 0
-    fi
-  fi
-  msg_error "This version of Proxmox VE is not supported."
-  exit 105
-}
-
-function arch_check() {
-  if [ "$(dpkg --print-architecture)" != "amd64" ]; then
-    echo -e "\n ${CROSS} This script will not work with PiMox! \n"
-    exit
-  fi
-}
-
-function ssh_check() {
-  if command -v pveversion >/dev/null 2>&1 && [ -n "${SSH_CLIENT:+x}" ]; then
-    if ! whiptail --backtitle "Proxmox VE Helper Scripts" --defaultno --title "SSH DETECTED" --yesno "It's suggested to use the Proxmox shell instead of SSH. Proceed anyway?" 10 62; then
-      clear
-      exit
-    fi
-  fi
-}
-
-function exit_script() {
-  clear
-  echo -e "⚠  User exited script \n"
-  exit
-}
-
 function get_available_bridges() {
   ip -o link show type bridge 2>/dev/null | awk -F': ' '{print $2}' | sort
 }
 
-function configure_lan_mode() {
-  if LAN_MODE_SELECTION=$(whiptail --backtitle "Proxmox VE Helper Scripts" --title "LAN CONFIGURATION" --radiolist --cancel-button Exit-Script "Choose LAN IP mode for OPNsense:" 15 72 2 "dhcp" "DHCP on LAN interface" ON "static" "Static IP on LAN interface" OFF 3>&1 1>&2 2>&3); then
-    LAN_IP_MODE="$LAN_MODE_SELECTION"
+function validate_ip_octets() {
+  local octet='(25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9]?[0-9])'
+  [[ "$1" =~ ^${octet}\.${octet}\.${octet}\.${octet}$ ]]
+}
+
+function prompt_router_input() {
+  local var_name="$1" title="$2" prompt="$3" default_value="$4" value
+  if vm_dialog inputbox "$title" "$prompt" 8 58 "$default_value" --cancel-button Exit-Script; then
+    value="$VM_DIALOG_RESULT"
+    printf -v "$var_name" '%s' "$value"
   else
     exit_script
   fi
+}
 
-  if [ "$LAN_IP_MODE" = "static" ]; then
-    if ! LAN_STATIC_IP=$(whiptail --backtitle "Proxmox VE Helper Scripts" --title "LAN STATIC IP" --inputbox "Enter LAN static IP address:" 10 60 "$LAN_STATIC_IP" 3>&1 1>&2 2>&3); then
-      exit_script
-    fi
+function prompt_optional_static_ip() {
+  local ip_var="$1" gw_var="$2" mask_var="$3" prefix="$4" ip_value gw_value mask_value
+  prompt_router_input "$ip_var" "${prefix} IP ADDRESS" "Set a ${prefix} IP (empty = DHCP)" "${!ip_var:-}"
+  ip_value="${!ip_var}"
+  if [ -z "$ip_value" ]; then
+    echo -e "${DGN}Using DHCP AS ${prefix} IP ADDRESS${CL}"
+    return 0
+  fi
+  if ! validate_ip_octets "$ip_value"; then
+    msg_error "Invalid IP Address format for ${prefix} IP. Needs to be 0.0.0.0, was $ip_value"
+    exit 1
+  fi
+  echo -e "${DGN}Using ${prefix} IP ADDRESS: ${BGN}$ip_value${CL}"
 
-    if ! LAN_STATIC_MASK=$(whiptail --backtitle "Proxmox VE Helper Scripts" --title "LAN PREFIX" --inputbox "Enter LAN CIDR prefix length (e.g. 24):" 10 60 "$LAN_STATIC_MASK" 3>&1 1>&2 2>&3); then
-      exit_script
-    fi
+  prompt_router_input "$gw_var" "${prefix} GATEWAY IP ADDRESS" "Set a ${prefix} GATEWAY IP" "${!gw_var:-}"
+  gw_value="${!gw_var}"
+  if [ -z "$gw_value" ]; then
+    msg_error "${prefix} gateway is required for a static IP."
+    exit 1
+  fi
+  if ! validate_ip_octets "$gw_value"; then
+    msg_error "Invalid IP Address format for ${prefix} Gateway. Needs to be 0.0.0.0, was $gw_value"
+    exit 1
+  fi
+  echo -e "${DGN}Using ${prefix} GATEWAY ADDRESS: ${BGN}$gw_value${CL}"
 
-    if ! LAN_STATIC_GW=$(whiptail --backtitle "Proxmox VE Helper Scripts" --title "LAN GATEWAY" --inputbox "Enter upstream gateway for LAN (leave empty if none):" 10 60 "$LAN_STATIC_GW" 3>&1 1>&2 2>&3); then
-      exit_script
-    fi
+  prompt_router_input "$mask_var" "${prefix} NETMASK" "Set a ${prefix} netmask (24 for example)" "${!mask_var:-}"
+  mask_value="${!mask_var}"
+  if [ -z "$mask_value" ]; then
+    msg_error "${prefix} netmask is required for a static IP."
+    exit 1
+  fi
+  if [[ ! "$mask_value" =~ ^[0-9]+$ || "$mask_value" -lt 1 || "$mask_value" -gt 32 ]]; then
+    msg_error "Invalid ${prefix} NETMASK format. Needs to be 1-32, was $mask_value"
+    exit 1
+  fi
+  echo -e "${DGN}Using ${prefix} NETMASK: ${BGN}$mask_value${CL}"
+}
 
-    if whiptail --backtitle "Proxmox VE Helper Scripts" --title "LAN DHCP SERVER" --yesno "Enable DHCP server on LAN?" 10 60; then
-      ENABLE_LAN_DHCP_SERVER="y"
-      if ! LAN_DHCP_RANGE_START=$(whiptail --backtitle "Proxmox VE Helper Scripts" --title "DHCP RANGE START" --inputbox "Enter DHCP range start address:" 10 60 "192.168.1.100" 3>&1 1>&2 2>&3); then
-        exit_script
-      fi
-      if ! LAN_DHCP_RANGE_END=$(whiptail --backtitle "Proxmox VE Helper Scripts" --title "DHCP RANGE END" --inputbox "Enter DHCP range end address:" 10 60 "192.168.1.200" 3>&1 1>&2 2>&3); then
-        exit_script
+function prompt_router_mac() {
+  local var_name="$1" title="$2" prompt="$3" default_value="$4" label="$5" value
+  prompt_router_input "$var_name" "$title" "$prompt" "$default_value"
+  value="${!var_name}"
+  [[ -n "$value" ]] || value="$default_value"
+  printf -v "$var_name" '%s' "$value"
+  if ! validate_mac_address "$value"; then
+    msg_error "Invalid ${label}: $value"
+    exit 1
+  fi
+  echo -e "${DGN}Using ${label}: ${BGN}$value${CL}"
+}
+
+function select_network_mode() {
+  local available_bridges bridge_count default_wan_brg
+  available_bridges=$(get_available_bridges)
+  bridge_count=$(echo "$available_bridges" | wc -l)
+  default_wan_brg=$(echo "$available_bridges" | grep -v "^${BRG}$" | head -n1 || true)
+
+  if [[ "${VM_UNATTENDED:-0}" == "1" ]]; then
+    WAN_BRG="${VM_WAN_BRIDGE:-}"
+  elif [ "$bridge_count" -ge 2 ]; then
+    if vm_dialog radiolist "NETWORK CONFIGURATION" --cancel-button Exit-Script \
+      "Choose network setup mode for OPNsense:\n" 14 70 2 \
+      "dual" "Dual Interface (Firewall/Router) - uses ${default_wan_brg}" ON \
+      "single" "Single Interface (Proxy/VPN/IDS Server)" OFF; then
+      if [ "$VM_DIALOG_RESULT" = "dual" ]; then
+        WAN_BRG="$default_wan_brg"
+        echo -e "${DGN}Network Mode: ${BGN}Dual Interface (Firewall)${CL}"
+        echo -e "${DGN}Using WAN Bridge: ${BGN}${WAN_BRG}${CL}"
+        echo -e "${DGN}Using WAN MAC Address: ${BGN}${WAN_MAC}${CL}"
+      else
+        echo -e "${DGN}Network Mode: ${BGN}Single Interface (Proxy/VPN/IDS)${CL}"
+        WAN_BRG=""
       fi
     else
-      ENABLE_LAN_DHCP_SERVER="n"
-      LAN_DHCP_RANGE_START=""
-      LAN_DHCP_RANGE_END=""
+      exit_script
     fi
   else
-    ENABLE_LAN_DHCP_SERVER="n"
-    LAN_DHCP_RANGE_START=""
-    LAN_DHCP_RANGE_END=""
+    echo -e "${DGN}Network Mode: ${BGN}Single Interface (Proxy/VPN/IDS)${CL}"
+    echo -e "${YW}  (Only one bridge detected, dual interface requires a second bridge)${CL}"
+    WAN_BRG=""
   fi
 }
 
+function prompt_wan_bridge() {
+  local wan_bridges wan_menu=() first=true brg
+  wan_bridges=$(get_available_bridges | grep -v "^${BRG}$" || true)
+  if [ -z "$wan_bridges" ]; then
+    WAN_BRG=""
+    msg_warn "Only one bridge is available; using single-interface mode."
+    return 0
+  fi
+  while IFS= read -r brg; do
+    if $first; then
+      wan_menu+=("$brg" "" "ON")
+      first=false
+    else
+      wan_menu+=("$brg" "" "OFF")
+    fi
+  done <<<"$wan_bridges"
+
+  if vm_dialog radiolist "WAN BRIDGE" "Select WAN Bridge" 14 58 6 "${wan_menu[@]}"; then
+    WAN_BRG="$VM_DIALOG_RESULT"
+    [[ -n "$WAN_BRG" ]] || WAN_BRG=$(echo "$wan_bridges" | head -n1)
+    echo -e "${DGN}Using WAN Bridge: ${BGN}$WAN_BRG${CL}"
+  else
+    exit_script
+  fi
+}
+
+# --- Fork additions: installer options -----------------------------------------
+
+function prompt_installer_keymap() {
+  local fr_default="OFF" def_default="ON"
+  # Preselect French when the Proxmox/VM keyboard is French
+  if [[ "${VM_KEYBOARD:-$(vm_keyboard_default)}" == fr* ]]; then
+    fr_default="ON"
+    def_default="OFF"
+  fi
+  if vm_dialog radiolist "INSTALLER KEYMAP" --cancel-button Exit-Script \
+    "Keymap selected in the OPNsense installer:\n" 12 66 2 \
+    "default" "Default keymap (US)" "$def_default" \
+    "french-accent" "French (accent keys)" "$fr_default"; then
+    KEYMAP_MODE="${VM_DIALOG_RESULT:-default}"
+  else
+    exit_script
+  fi
+  echo -e "${DGN}Installer Keymap: ${BGN}${KEYMAP_MODE}${CL}"
+}
+
+function prompt_filesystem() {
+  if vm_dialog radiolist "FILESYSTEM" --cancel-button Exit-Script \
+    "Filesystem for the OPNsense installation:\n" 12 58 2 \
+    "ufs" "UFS" ON \
+    "zfs" "ZFS" OFF; then
+    FILESYSTEM_MODE="${VM_DIALOG_RESULT:-ufs}"
+  else
+    exit_script
+  fi
+  echo -e "${DGN}Filesystem: ${BGN}${FILESYSTEM_MODE^^}${CL}"
+}
+
+# Static LAN asks whether OPNsense should serve DHCP on it
+function prompt_lan_dhcp_server() {
+  ENABLE_LAN_DHCP_SERVER="n"
+  LAN_DHCP_RANGE_START=""
+  LAN_DHCP_RANGE_END=""
+  [ "$LAN_IP_MODE" = "static" ] || return 0
+  if vm_dialog yesno "LAN DHCP SERVER" "Enable DHCP server on LAN?" 10 60; then
+    ENABLE_LAN_DHCP_SERVER="y"
+    local net="${IP_ADDR%.*}"
+    prompt_router_input "LAN_DHCP_RANGE_START" "DHCP RANGE START" "Enter DHCP range start address:" "${net}.100"
+    prompt_router_input "LAN_DHCP_RANGE_END" "DHCP RANGE END" "Enter DHCP range end address:" "${net}.200"
+    if ! validate_ip_octets "$LAN_DHCP_RANGE_START" || ! validate_ip_octets "$LAN_DHCP_RANGE_END"; then
+      msg_error "Invalid DHCP range: ${LAN_DHCP_RANGE_START} - ${LAN_DHCP_RANGE_END}"
+      exit 1
+    fi
+    echo -e "${DGN}LAN DHCP Server: ${BGN}${LAN_DHCP_RANGE_START} - ${LAN_DHCP_RANGE_END}${CL}"
+  else
+    echo -e "${DGN}LAN DHCP Server: ${BGN}disabled${CL}"
+  fi
+}
+
+# Default mode: DHCP or static LAN prefilled with 192.168.1.2/24 via 192.168.1.1
+function configure_lan_mode() {
+  if vm_dialog radiolist "LAN CONFIGURATION" --cancel-button Exit-Script \
+    "Choose LAN IP mode for OPNsense:\n" 12 72 2 \
+    "dhcp" "DHCP on LAN interface" ON \
+    "static" "Static IP on LAN interface" OFF; then
+    LAN_IP_MODE="${VM_DIALOG_RESULT:-dhcp}"
+  else
+    exit_script
+  fi
+  if [ "$LAN_IP_MODE" = "static" ]; then
+    IP_ADDR="$LAN_STATIC_IP_DEFAULT"
+    NETMASK="$LAN_STATIC_MASK_DEFAULT"
+    LAN_GW="$LAN_STATIC_GW_DEFAULT"
+    prompt_optional_static_ip "IP_ADDR" "LAN_GW" "NETMASK" "LAN"
+    [ -n "$IP_ADDR" ] || LAN_IP_MODE="dhcp"
+  else
+    IP_ADDR=""
+    echo -e "${DGN}Using DHCP AS LAN IP ADDRESS${CL}"
+  fi
+  prompt_lan_dhcp_server
+}
+
+function prompt_iso_cache() {
+  if vm_dialog yesno "ISO CACHE" "Reuse local OPNsense ISO if already present?" 10 62; then
+    FORCE_ISO_DOWNLOAD="no"
+  else
+    FORCE_ISO_DOWNLOAD="yes"
+  fi
+}
+
+function prompt_installer_options() {
+  if [[ "${VM_UNATTENDED:-0}" == "1" ]]; then
+    KEYMAP_MODE="${OPNSENSE_KEYMAP:-$KEYMAP_MODE}"
+    FILESYSTEM_MODE="${OPNSENSE_FILESYSTEM:-$FILESYSTEM_MODE}"
+    return 0
+  fi
+  prompt_installer_keymap
+  prompt_filesystem
+  prompt_iso_cache
+}
+
+# -------------------------------------------------------------------------------
+
 function default_settings() {
+  vm_apply_machine_type "i440fx"
   VMID=$(get_valid_nextid)
-  FORMAT=",efitype=4m,pre-enrolled-keys=0"
+  DISK_SIZE="20G"
   MACHINE=""
+  DISK_CACHE=""
   HN="opnsense"
   CPU_TYPE=""
   CORE_COUNT="4"
-  RAM_SIZE="4096"
-  DISK_SIZE="20"
+  RAM_SIZE="8192"
   BRG="vmbr0"
+  IP_ADDR=""
+  WAN_IP_ADDR=""
+  LAN_GW=""
+  WAN_GW=""
+  NETMASK=""
+  WAN_NETMASK=""
   VLAN=""
   MAC=$GEN_MAC
   WAN_MAC=$GEN_MAC_LAN
@@ -340,59 +433,83 @@ function default_settings() {
   START_VM="yes"
   METHOD="default"
 
-  local AVAILABLE_BRIDGES
-  AVAILABLE_BRIDGES=$(get_available_bridges)
-  local BRIDGE_COUNT
-  BRIDGE_COUNT=$(echo "$AVAILABLE_BRIDGES" | wc -l)
+  echo -e "${DGN}Using Virtual Machine ID: ${BGN}${VMID}${CL}"
+  echo -e "${DGN}Using Hostname: ${BGN}${HN}${CL}"
+  echo -e "${DGN}Allocated Cores: ${BGN}${CORE_COUNT}${CL}"
+  echo -e "${DGN}Allocated RAM: ${BGN}${RAM_SIZE}${CL}"
+  if ! ip link show "${BRG}" &>/dev/null; then
+    msg_error "Bridge '${BRG}' does not exist"
+    exit
+  else
+    echo -e "${DGN}Using LAN Bridge: ${BGN}${BRG}${CL}"
+  fi
+  echo -e "${DGN}Using LAN VLAN: ${BGN}Default${CL}"
+  echo -e "${DGN}Using LAN MAC Address: ${BGN}${MAC}${CL}"
+  select_network_mode
+  echo -e "${DGN}Using Interface MTU Size: ${BGN}Default${CL}"
+  echo -e "${DGN}Start VM when completed: ${BGN}yes${CL}"
+  prompt_installer_options
+  if [[ "${VM_UNATTENDED:-0}" != "1" ]]; then
+    configure_lan_mode
+  fi
+  echo -e "${BL}Creating a OPNsense VM using the above default settings${CL}"
+}
 
+function advanced_settings() {
+  METHOD="advanced"
+  IP_ADDR=""
+  WAN_IP_ADDR=""
+  LAN_GW=""
+  WAN_GW=""
+  NETMASK=""
+  WAN_NETMASK=""
+  VLAN=""
+  MTU=""
+  vm_prompt_disk_size "20G"
+  vm_prompt_keyboard
+  vm_prompt_verbose "no"
+  vm_prompt_start_vm "yes"
+  vm_prompt_vmid "${VMID:-$(get_valid_nextid)}"
+  vm_prompt_machine_type "i440fx"
+  vm_prompt_cpu_model "kvm64"
+  vm_prompt_disk_cache "none"
+  vm_prompt_hostname "opnsense"
+  vm_prompt_cpu_cores "4"
+  vm_prompt_ram "8192"
+
+  prompt_router_input "BRG" "LAN BRIDGE" "Set a LAN Bridge" "vmbr0"
+  [[ -n "$BRG" ]] || BRG="vmbr0"
   if ! ip link show "${BRG}" &>/dev/null; then
     msg_error "Bridge '${BRG}' does not exist"
     exit 1
   fi
+  echo -e "${DGN}Using LAN Bridge: ${BGN}$BRG${CL}"
 
-  local DEFAULT_WAN_BRG
-  DEFAULT_WAN_BRG=$(echo "$AVAILABLE_BRIDGES" | grep -v "^${BRG}$" | head -n1 || true)
-  if [ "$BRIDGE_COUNT" -ge 2 ]; then
-    if NETWORK_MODE=$(whiptail --backtitle "Proxmox VE Helper Scripts" --title "NETWORK CONFIGURATION" --radiolist --cancel-button Exit-Script "Choose network setup mode for OPNsense:" 14 70 2 "dual" "Dual Interface (Firewall/Router) - uses ${DEFAULT_WAN_BRG}" ON "single" "Single Interface (Lab/Test only)" OFF 3>&1 1>&2 2>&3); then
-      if [ "$NETWORK_MODE" = "dual" ]; then
-        WAN_BRG="$DEFAULT_WAN_BRG"
-      fi
-    else
-      exit_script
-    fi
-  fi
-
-  if whiptail --backtitle "Proxmox VE Helper Scripts" --title "KEYMAP" --yesno "Use default keymap?
-
-Choose Yes for default keymap, No for French (accent keys)." 11 66; then
-    KEYMAP_MODE="default"
+  prompt_optional_static_ip "IP_ADDR" "LAN_GW" "NETMASK" "LAN"
+  if [ -n "$IP_ADDR" ]; then
+    LAN_IP_MODE="static"
   else
-    KEYMAP_MODE="french-accent"
+    LAN_IP_MODE="dhcp"
   fi
-
-  if whiptail --backtitle "Proxmox VE Helper Scripts" --title "FILESYSTEM" --yesno "Use UFS filesystem?
-
-Choose Yes for UFS, No for ZFS." 11 62; then
-    FILESYSTEM_MODE="ufs"
+  prompt_lan_dhcp_server
+  prompt_wan_bridge
+  if [[ -n "$WAN_BRG" ]]; then
+    prompt_optional_static_ip "WAN_IP_ADDR" "WAN_GW" "WAN_NETMASK" "WAN"
+  fi
+  prompt_router_mac "MAC" "LAN MAC ADDRESS" "Set a LAN MAC Address" "$GEN_MAC" "LAN MAC address"
+  if [[ -n "$WAN_BRG" ]]; then
+    prompt_router_mac "WAN_MAC" "WAN MAC ADDRESS" "Set a WAN MAC Address" "$GEN_MAC_LAN" "WAN MAC address"
   else
-    FILESYSTEM_MODE="zfs"
+    WAN_MAC="$GEN_MAC_LAN"
   fi
+  prompt_installer_options
 
-  configure_lan_mode
-
-  if whiptail --backtitle "Proxmox VE Helper Scripts" --title "ISO CACHE" --yesno "Reuse local OPNsense ISO if already present?" 10 62; then
-    FORCE_ISO_DOWNLOAD="no"
+  if vm_confirm_advanced_settings "Ready to create OPNsense VM?"; then
+    echo -e "${RD}Creating a OPNsense VM using the above advanced settings${CL}"
   else
-    FORCE_ISO_DOWNLOAD="yes"
-  fi
-}
-
-function start_script() {
-  if whiptail --backtitle "Proxmox VE Helper Scripts" --title "SETTINGS" --yesno "Use Default Settings?" --no-button Exit 10 58; then
     header_info
-    default_settings
-  else
-    exit_script
+    echo -e "${RD}Using Advanced Settings${CL}"
+    advanced_settings
   fi
 }
 
@@ -411,21 +528,24 @@ function find_opnsense_iso_url() {
   return 1
 }
 
-function resolve_iso_storage_dir() {
-  case "$ISO_STORAGE" in
-    local) echo "/var/lib/vz/template/iso" ;;
-    *) echo "/var/lib/vz/template/iso" ;;
-  esac
-}
-
 function ensure_opnsense_iso() {
-  local iso_dir
-  iso_dir="$(resolve_iso_storage_dir)"
-  local cached_iso="${iso_dir}/${ISO_RAW_FILENAME}"
-
-  if [ "$FORCE_ISO_DOWNLOAD" != "yes" ] && [ -f "$cached_iso" ]; then
-    msg_ok "Reusing existing ISO ${CL}${BL}${cached_iso}${CL}"
+  if [ "$FORCE_ISO_DOWNLOAD" != "yes" ] && [ -f "$ISO_PATH" ]; then
+    msg_ok "Reusing existing ISO ${CL}${BL}${ISO_PATH}${CL}"
     return 0
+  fi
+
+  msg_info "Locating official OPNsense ISO"
+  ISO_URL=$(find_opnsense_iso_url) || {
+    msg_error "Unable to locate ${ISO_FILENAME} on known OPNsense mirrors."
+    exit 117
+  }
+  msg_ok "Download URL: ${CL}${BL}${ISO_URL}${CL}"
+
+  if ! check_disk_space "$TEMP_DIR" 4; then
+    AVAILABLE_GB=$(df -h "$TEMP_DIR" | awk 'NR==2 {print $4}')
+    msg_error "Insufficient disk space in temporary directory ($TEMP_DIR)."
+    msg_error "Available: ${AVAILABLE_GB}, Required: ~4GB for the OPNsense ISO."
+    exit 214
   fi
 
   msg_info "Downloading official OPNsense ISO archive"
@@ -438,11 +558,12 @@ function ensure_opnsense_iso() {
   msg_ok "Decompressed ${CL}${BL}${ISO_RAW_FILENAME}${CL}"
 
   msg_info "Copying ISO into Proxmox ISO storage"
-  mkdir -p "$iso_dir"
-  cp -f "${ISO_RAW_FILENAME}" "$cached_iso"
-  msg_ok "ISO copied to ${CL}${BL}${cached_iso}${CL}"
+  mkdir -p "$(dirname "$ISO_PATH")"
+  mv -f "${ISO_RAW_FILENAME}" "$ISO_PATH"
+  msg_ok "ISO copied to ${CL}${BL}${ISO_PATH}${CL}"
 }
 
+# The answers below are matched to OPNsense's console dialog (setaddr.php).
 function configure_lan_ip_after_login() {
   msg_info "Logging into installed system"
   send_line_to_vm "root"
@@ -468,9 +589,9 @@ function configure_lan_ip_after_login() {
     msg_info "Configuring static LAN address"
     send_line_to_vm "1"
     send_line_to_vm "n"
-    send_line_to_vm "${LAN_STATIC_IP}"
-    send_line_to_vm "${LAN_STATIC_MASK}"
-    send_line_to_vm "${LAN_STATIC_GW}"
+    send_line_to_vm "${IP_ADDR}"
+    send_line_to_vm "${NETMASK}"
+    send_line_to_vm "${LAN_GW}"
     send_line_to_vm "n"
     send_line_to_vm " "
     send_line_to_vm "n"
@@ -487,6 +608,26 @@ function configure_lan_ip_after_login() {
   fi
   wait_for_boot 15
   msg_ok "LAN configuration sent"
+
+  # Static WAN (from upstream), same console dialog
+  if [ -n "$WAN_BRG" ] && [ "$WAN_IP_ADDR" != "" ]; then
+    msg_info "Configuring static WAN address"
+    send_line_to_vm "2"
+    send_line_to_vm "2"
+    send_line_to_vm "n"
+    send_line_to_vm "${WAN_IP_ADDR}"
+    send_line_to_vm "${WAN_NETMASK}"
+    send_line_to_vm "${WAN_GW}"
+    send_line_to_vm "n"
+    send_line_to_vm " "
+    send_line_to_vm "n"
+    send_line_to_vm " "
+    send_line_to_vm "n"
+    send_line_to_vm "n"
+    send_line_to_vm "n"
+    wait_for_boot 10
+    msg_ok "WAN configuration sent"
+  fi
 }
 
 function automate_installer() {
@@ -583,109 +724,81 @@ function automate_installer() {
 
   configure_lan_ip_after_login
 
+  # Leave the console menu
+  send_line_to_vm "0"
   msg_ok "Automatic install flow sent to guest"
 }
 
-arch_check
-pve_check
-ssh_check
-start_script
+vm_start_script "Use Default Settings?\n\nDefaults:\n• 4 CPU Cores\n• 8 GB RAM\n• 20 GB Disk\n• Official OPNsense ${var_version} ISO" 14 58
 post_to_api_vm
 
-msg_info "Validating Storage"
-STORAGE=$(pvesm status -content images | awk 'NR==2 {print $1}')
-if [ -z "$STORAGE" ]; then
-  msg_error "Unable to detect a valid storage location."
-  exit 1
-fi
-msg_ok "Using ${CL}${BL}$STORAGE${CL} ${GN}for VM disks."
-
-msg_info "Validating ISO storage"
-ISO_STORAGE=$(pvesm status -content iso | awk 'NR==2 {print $1}')
-if [ -z "${ISO_STORAGE:-}" ]; then
-  msg_error "No storage with ISO content enabled was found."
-  exit 116
-fi
-msg_ok "Using ${CL}${BL}${ISO_STORAGE}${CL} ${GN}for ISO storage."
-
-msg_info "Locating official OPNsense ISO"
-ISO_URL=$(find_opnsense_iso_url) || {
-  msg_error "Unable to locate ${ISO_FILENAME} on known OPNsense mirrors."
-  exit 117
-}
-msg_ok "Download URL: ${CL}${BL}${ISO_URL}${CL}"
+vm_select_storage "$HN"
+vm_select_iso_storage "$ISO_RAW_FILENAME" "$HN" || exit 119
 
 ensure_opnsense_iso
 
-msg_info "Creating OPNsense VM"
-qm create $VMID -agent 1${MACHINE} -tablet 0 -localtime 1 -bios ovmf${CPU_TYPE} -cores $CORE_COUNT -memory $RAM_SIZE -name $HN -tags community-script -onboot 1 -ostype l26 -scsihw virtio-scsi-pci >/dev/null
-msg_ok "VM created"
+vm_claim_vmid
+msg_info "Creating a OPNsense VM"
+# A firewall VM filters itself: Proxmox's per-NIC firewall off, and virtio
+# multiqueue matched to the cores so routing scales past one vCPU.
+qm create $VMID -agent 1${MACHINE} -tablet 0 -localtime 1 -bios ovmf${CPU_TYPE} -cores $CORE_COUNT -memory $RAM_SIZE -balloon 0 \
+  -name $HN -tags community-script -net0 virtio,bridge=$BRG,macaddr=$MAC,firewall=0,queues=$CORE_COUNT$VLAN$MTU -onboot 1 -ostype l26 -scsihw virtio-scsi-pci >/dev/null
+vm_mark_created
 
 msg_info "Allocating system disk"
-qm set $VMID -scsi0 ${STORAGE}:${DISK_SIZE},discard=on,ssd=1 >/dev/null
-msg_ok "Disk attached"
-
-msg_info "Configuring boot media"
-qm set $VMID -efidisk0 ${STORAGE}:1${FORMAT} >/dev/null
-qm set $VMID -ide2 ${ISO_STORAGE}:iso/${ISO_RAW_FILENAME},media=cdrom >/dev/null
-qm set $VMID -boot order='ide2;scsi0' >/dev/null
-qm set $VMID -serial0 socket >/dev/null
-msg_ok "Boot media configured"
-
-msg_info "Adding LAN interface"
-qm set $VMID -net0 virtio,bridge=${BRG},macaddr=${MAC}${VLAN}${MTU} >/dev/null
-msg_ok "LAN interface added"
+# "<storage>:<GiB>" lets Proxmox allocate on any storage type
+SCSI0_OPTS="${STORAGE}:${DISK_SIZE%G}"
+DISK_EXTRA="${DISK_CACHE}${THIN}"
+[[ -n "$DISK_EXTRA" ]] && SCSI0_OPTS+=",${DISK_EXTRA%,}"
+qm set $VMID \
+  -efidisk0 "${STORAGE}:1${EFI_OPTS}" \
+  -scsi0 "$SCSI0_OPTS" \
+  -ide2 "${ISO_VOLUME},media=cdrom" \
+  -boot order='ide2;scsi0' \
+  -serial0 socket >/dev/null
+msg_ok "Disk and boot media configured"
+set_description
 
 if [ -n "$WAN_BRG" ]; then
   msg_info "Adding WAN interface"
-  qm set $VMID -net1 virtio,bridge=${WAN_BRG},macaddr=${WAN_MAC} >/dev/null
+  qm set $VMID \
+    -net1 virtio,bridge=${WAN_BRG},macaddr=${WAN_MAC},firewall=0,queues=${CORE_COUNT} >/dev/null
   msg_ok "WAN interface added"
 fi
 
-DESCRIPTION=$(
-cat <<EOF2
-<div align='center'>
-<a href='https://community-scripts.org' target='_blank' rel='noopener noreferrer'>
-<img src='https://raw.githubusercontent.com/michelroegl-brunner/ProxmoxVE/refs/heads/develop/misc/images/logo-81x112.png' alt='Logo' style='width:81px;height:112px;'/>
-</a>
-
-<h2 style='font-size: 24px; margin: 20px 0;'>OPNsense ${var_version} VM (Official ISO)</h2>
-
-<p style='margin: 16px 0;'>
-<a href='https://ko-fi.com/community_scripts' target='_blank' rel='noopener noreferrer'>
-<img src='https://img.shields.io/badge/&#x2615;-Buy us a coffee-blue' alt='spend Coffee' />
-</a>
-</p>
-
-<span style='margin: 0 10px;'>
-<i class="fa fa-github fa-fw" style="color: #f5f5f5;"></i>
-<a href='https://github.com/community-scripts/ProxmoxVE' target='_blank' rel='noopener noreferrer' style='text-decoration: none; color: #00617f;'>GitHub</a>
-</span>
-<span style='margin: 0 10px;'>
-<i class="fa fa-comments fa-fw" style="color: #f5f5f5;"></i>
-<a href='https://github.com/community-scripts/ProxmoxVE/discussions' target='_blank' rel='noopener noreferrer' style='text-decoration: none; color: #00617f;'>Discussions</a>
-</span>
-<span style='margin: 0 10px;'>
-<i class="fa fa-exclamation-circle fa-fw" style="color: #f5f5f5;"></i>
-<a href='https://github.com/community-scripts/ProxmoxVE/issues' target='_blank' rel='noopener noreferrer' style='text-decoration: none; color: #00617f;'>Issues</a>
-</span>
-</div>
-EOF2
-)
-qm set $VMID -description "$DESCRIPTION" >/dev/null
-
-msg_info "Starting VM"
+msg_ok "Created a OPNsense VM ${CL}${BL}(${HN})"
+msg_info "Starting OPNsense VM"
 qm start $VMID >/dev/null
-msg_ok "VM started"
+msg_ok "Started OPNsense VM, do not close the terminal, or the installation will fail."
 
 automate_installer
 
-msg_ok "Completed successfully!"
-echo -e "${YW}Expected result:${CL}"
-echo -e " - OPNsense installed on disk"
-echo -e " - Guest rebooted on system disk"
-echo -e " - LAN configured in ${LAN_IP_MODE} mode"
-if [ "$LAN_IP_MODE" = "static" ]; then
-  echo -e " - Static LAN IP: ${LAN_STATIC_IP}/${LAN_STATIC_MASK}"
+if [[ "$START_VM" == "no" ]]; then
+  msg_info "Shutting down OPNsense as requested"
+  $STD qm shutdown "$VMID" --timeout 120
+  msg_ok "OPNsense VM shut down"
+else
+  msg_ok "OPNsense VM is running"
 fi
-echo -e "${RD}Warning:${CL} This automation depends on the exact installer screens and may need timing tweaks on your host."
+
+if [ "$IP_ADDR" != "" ]; then
+  LAN_URL="https://${IP_ADDR}"
+else
+  LAN_URL="DHCP - check the OPNsense console or your leases"
+fi
+LAN_MODE_LABEL="$LAN_IP_MODE"
+[ "$ENABLE_LAN_DHCP_SERVER" = "y" ] && LAN_MODE_LABEL+=" (DHCP server ${LAN_DHCP_RANGE_START}-${LAN_DHCP_RANGE_END})"
+
+vm_print_summary \
+  "LAN URL=${LAN_URL}" \
+  "LAN Mode=${LAN_MODE_LABEL}" \
+  "LAN Bridge=${BRG}" \
+  "WAN Bridge=${WAN_BRG:-single-interface mode}" \
+  "OPNsense Version=${var_version} (official ISO)" \
+  "Filesystem=${FILESYSTEM_MODE^^}" \
+  "Installer Keymap=${KEYMAP_MODE}"
+vm_next_steps \
+  "Verify the installation and network configuration in the OPNsense console." \
+  "Login as root with password ${INSTALL_ROOT_PASSWORD}, then change the password immediately." \
+  "This automation depends on the exact installer screens and may need timing tweaks on your host."
+vm_finish "VM creation completed; verify the installation and network configuration in the console."

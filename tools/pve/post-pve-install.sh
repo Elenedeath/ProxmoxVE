@@ -3,7 +3,7 @@
 # Copyright (c) 2021-2026 tteck
 # Author: tteckster | MickLesk (CanbiZ)
 # License: MIT
-# [https://github.com/elenedeath/ProxmoxVE/raw/main/LICENSE](https://github.com/elenedeath/ProxmoxVE/raw/main/LICENSE)
+# https://github.com/community-scripts/ProxmoxVE/raw/main/LICENSE
 
 header_info() {
   clear
@@ -11,7 +11,7 @@ header_info() {
     ____ _    ________   ____             __     ____           __        ____
    / __ \ |  / / ____/  / __ \____  _____/ /_   /  _/___  _____/ /_____ _/ / /
   / /_/ / | / / __/    / /_/ / __ \/ ___/ __/   / // __ \/ ___/ __/ __ `/ / /
- / ____/| |/ / /___   / ____/ /_/ (__  ) /_   _/ // / / (__ ) /_/ /_/ / / /
+ / ____/| |/ / /___   / ____/ /_/ (__  ) /_   _/ // / / (__  ) /_/ /_/ / / /
 /_/     |___/_____/  /_/    \____/____/\__/  /___/_/ /_/____/\__/\__,_/_/_/
 
 EOF
@@ -45,7 +45,7 @@ msg_error() {
 }
 
 # Telemetry
-source <(curl -fsSL https://raw.githubusercontent.com/elenedeath/ProxmoxVE/main/misc/api.func) 2>/dev/null || true
+source <(curl -fsSL "${COMMUNITY_SCRIPTS_CORE_URL:-https://raw.githubusercontent.com/community-scripts/core/main}/api/api.func") 2>/dev/null || true
 declare -f init_tool_telemetry &>/dev/null && init_tool_telemetry "post-pve-install" "pve"
 
 get_pve_version() {
@@ -63,7 +63,14 @@ get_pve_major_minor() {
 
 component_exists_in_sources() {
   local component="$1"
-  grep -h -E "^[^#]*Components:[^#]*\b${component}\b" /etc/apt/sources.list.d/*.sources 2>/dev/null | grep -q .
+  local line comp
+  while IFS= read -r line; do
+    line="${line#*Components:}"
+    for comp in $line; do
+      [[ "$comp" == "$component" ]] && return 0
+    done
+  done < <(grep -h -E "^[^#]*Components:" /etc/apt/sources.list.d/*.sources 2>/dev/null)
+  return 1
 }
 
 main() {
@@ -124,12 +131,6 @@ EOF
     ;;
   no) msg_error "Selected no to Correcting Proxmox VE Sources" ;;
   esac
-
-  if [[ "$(dpkg --print-architecture 2>/dev/null)" == "arm64" ]]; then
-    msg_ok "ARM64 detected - skipping Proxmox repository setup"
-    post_routines_common
-    return
-  fi
 
   CHOICE=$(whiptail --backtitle "Proxmox VE Helper Scripts" --title "PVE-ENTERPRISE" --menu "The 'pve-enterprise' repository is only available to users who have purchased a Proxmox VE subscription.\n \nDisable 'pve-enterprise' repository?" 14 58 2 \
     "yes" " " \
@@ -288,19 +289,13 @@ EOF
     esac
   fi
 
-  if [[ "$(dpkg --print-architecture 2>/dev/null)" == "arm64" ]]; then
-    msg_ok "ARM64 detected - skipping Proxmox repository setup"
-    post_routines_common
-    return
-  fi
-
   # ---- PVE-ENTERPRISE ----
   if component_exists_in_sources "pve-enterprise"; then
     CHOICE=$(whiptail --backtitle "Proxmox VE Helper Scripts" \
       --title "PVE-ENTERPRISE" \
       --menu "'pve-enterprise' repository already exists.\n\nWhat do you want to do?" 14 58 2 \
       "keep" "Keep as is" \
-      "disable" "Comment out (disable) this repo" \
+      "disable" "Disable this repo (set Enabled: false)" \
       "delete" "Delete this repo file" \
       3>&2 2>&1 1>&3)
     case $CHOICE in
@@ -643,10 +638,6 @@ patterns = [
     r"(?P<item>\{\s*itemId:\s*['\"]version['\"].*?textField:\s*['\"]pveversion['\"].*?\n\s*\},)",
     r"(?P<item>\{(?:(?!\n\s*\},).)*?textField:\s*['\"]pveversion['\"].*?\n\s*\},)",
 ]
-											  
-									
-					  
-			 
 
 match = None
 for pattern in patterns:
@@ -723,10 +714,6 @@ insert = r'''        {
         },'''
 
 text = text[:match.end()] + "\n" + insert + text[match.end():]
-						  
-												  
-				   
-														  
 p.write_text(text)
 PY
 
@@ -861,8 +848,6 @@ EOF
     no) msg_error "Selected no to Disabling high availability" ;;
     esac
   fi
-
-					 
 
   CHOICE=$(whiptail --backtitle "Proxmox VE Helper Scripts" --title "UPDATE" --menu "\nUpdate Proxmox VE now?" 11 58 2 \
     "yes" " " \

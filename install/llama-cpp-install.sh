@@ -2,7 +2,7 @@
 
 # Copyright (c) 2021-2026 community-scripts ORG
 # Author: MickLesk (CanbiZ)
-# License: MIT | https://github.com/elenedeath/ProxmoxVED/raw/main/LICENSE
+# License: MIT | https://github.com/Elenedeath/ProxmoxVE/raw/main/LICENSE
 # Source: https://github.com/ggml-org/llama.cpp
 
 source /dev/stdin <<<"$FUNCTIONS_FILE_PATH"

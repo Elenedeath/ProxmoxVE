@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-source <(curl -fsSL https://raw.githubusercontent.com/community-scripts/ProxmoxVE/main/misc/build.func)
+_cs_boot="${COMMUNITY_SCRIPTS_CORE_DIR:-$(dirname "${BASH_SOURCE[0]}")/../../core}/core/build.func"
+source "$_cs_boot" 2>/dev/null || source <(curl -fsSL "${COMMUNITY_SCRIPTS_CORE_URL:-https://raw.githubusercontent.com/community-scripts/core/main}/core/build.func")
 # Copyright (c) 2021-2026 community-scripts ORG
 # Author: MickLesk (CanbiZ)
 # License: MIT | https://github.com/community-scripts/ProxmoxVE/raw/main/LICENSE
@@ -68,6 +69,7 @@ function update_script() {
     msg_ok "Ensured Database Clients"
 
     CLEAN_INSTALL=1 fetch_and_deploy_gh_release "databasus" "databasus/databasus" "tarball" "latest" "/opt/databasus"
+    GO_VERSION="$(grep -m1 '^go ' /opt/databasus/backend/go.mod | awk '{print $2}')" setup_go
 
     msg_info "Updating Databasus"
     export COREPACK_ENABLE_DOWNLOAD_PROMPT=0
@@ -84,10 +86,10 @@ function update_script() {
     mkdir -p /opt/databasus/ui/build
     cp -r /opt/databasus/frontend/dist/* /opt/databasus/ui/build/
     cp -r /opt/databasus/backend/migrations /opt/databasus/
-    chown -R postgres:postgres /opt/databasus
     msg_ok "Updated Databasus"
 
     restore_backup
+    chown -R postgres:postgres /opt/databasus
 
     if ! grep -q "EnvironmentFile=/.env" /etc/systemd/system/databasus.service; then
       msg_info "Updating Service"

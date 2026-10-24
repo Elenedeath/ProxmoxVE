@@ -26,9 +26,9 @@ PG_VERSION="17" setup_postgresql
 msg_info "Setup PostgreSQL"
 DB_NAME="warranty_db"
 DB_USER="warranty_user"
-DB_PASS=$(openssl rand -base64 18 | tr -dc 'a-zA-Z0-9' | cut -c1-13)
+DB_PASS=$(random_password 13)
 DB_ADMIN_USER="warracker_admin"
-DB_ADMIN_PASS=$(openssl rand -base64 18 | tr -dc 'a-zA-Z0-9' | cut -c1-13)
+DB_ADMIN_PASS=$(random_password 13)
 $STD sudo -u postgres psql -c "CREATE USER $DB_USER WITH PASSWORD '$DB_PASS';"
 $STD sudo -u postgres psql -c "CREATE USER $DB_ADMIN_USER WITH PASSWORD '$DB_ADMIN_PASS' SUPERUSER;"
 $STD sudo -u postgres psql -c "CREATE DATABASE $DB_NAME OWNER $DB_ADMIN_USER;"
@@ -69,10 +69,7 @@ sed -i \
     -e "s|/var/www/html|/opt/warracker/frontend|g" \
     -e "s/client_max_body_size __NGINX_MAX_BODY_SIZE_CONFIG_VALUE__/client_max_body_size 32M/" \
     /etc/nginx/sites-available/warracker.conf
-ln -s /etc/nginx/sites-available/warracker.conf /etc/nginx/sites-enabled/warracker.conf
-rm /etc/nginx/sites-enabled/default
-systemctl restart nginx
-
+nginx_enable_site warracker.conf
 msg_ok "Configured Nginx"
 
 msg_info "Creating systemd services"

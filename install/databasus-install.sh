@@ -22,7 +22,6 @@ $STD apt install -y \
 msg_ok "Installed Dependencies"
 
 PG_VERSION="17" setup_postgresql
-setup_go
 NODE_VERSION="24" NODE_MODULE="corepack" setup_nodejs
 
 msg_info "Installing Database Clients"
@@ -52,6 +51,7 @@ done
 msg_ok "Installed Database Clients"
 
 fetch_and_deploy_gh_release "databasus" "databasus/databasus" "tarball" "latest" "/opt/databasus"
+GO_VERSION="$(grep -m1 '^go ' /opt/databasus/backend/go.mod | awk '{print $2}')" setup_go
 
 msg_info "Building Databasus (Patience)"
 export COREPACK_ENABLE_DOWNLOAD_PROMPT=0
@@ -159,7 +159,6 @@ StandardError=journal
 [Install]
 WantedBy=multi-user.target
 EOF
-$STD systemctl daemon-reload
 $STD systemctl enable -q --now databasus
 msg_ok "Created Databasus Service"
 
@@ -185,11 +184,7 @@ server {
     }
 }
 EOF
-ln -sf /etc/nginx/sites-available/databasus /etc/nginx/sites-enabled/databasus
-rm -f /etc/nginx/sites-enabled/default
-$STD nginx -t
-$STD systemctl enable -q --now nginx
-$STD systemctl reload nginx
+nginx_enable_site databasus
 msg_ok "Configured Nginx"
 
 motd_ssh
