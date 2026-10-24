@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 # Fork: install/ et update se chargent depuis Elenedeath/ProxmoxVE (moteur = community-scripts/core)
 COMMUNITY_SCRIPTS_URL="${COMMUNITY_SCRIPTS_URL:-https://raw.githubusercontent.com/Elenedeath/ProxmoxVE/main}"
+# Telemetrie comme a l'origine du fork : runs attribues a "ProxmoxVE"
+export REPO_SOURCE="${REPO_SOURCE:-ProxmoxVE}"
 _cs_boot="${COMMUNITY_SCRIPTS_CORE_DIR:-$(dirname "${BASH_SOURCE[0]}")/../../core}/core/build.func"
 source "$_cs_boot" 2>/dev/null || source <(curl -fsSL "${COMMUNITY_SCRIPTS_CORE_URL:-https://raw.githubusercontent.com/community-scripts/core/main}/core/build.func")
 # Copyright (c) 2021-2026 community-scripts ORG

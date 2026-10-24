@@ -10,6 +10,8 @@
 # ISO cache reuse.
 
 COMMUNITY_SCRIPTS_URL="${COMMUNITY_SCRIPTS_URL:-https://raw.githubusercontent.com/Elenedeath/ProxmoxVE/main}"
+# Telemetrie comme a l'origine du fork : runs attribues a "ProxmoxVE"
+export REPO_SOURCE="${REPO_SOURCE:-ProxmoxVE}"
 source <(curl -fsSL "${COMMUNITY_SCRIPTS_CORE_URL:-https://raw.githubusercontent.com/community-scripts/core/main}/pve/vm-core.func")
 load_functions
 
